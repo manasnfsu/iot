@@ -1,135 +1,83 @@
-import streamlit as st
-import pandas as pd
-import requests
-from datetime import datetime
+#include <ESP8266WiFi.h>
+#include <FirebaseESP8266.h>
+#include <DHT.h>
+#include <WiFiUdp.h>
+#include <NTPClient.h>
 
-# ---------------------------------------------------------
-# STREAMLIT PAGE CONFIG
-# ---------------------------------------------------------
-st.set_page_config(page_title="ESP8266 IoT Forensics", layout="wide")
-st.title("📡 ESP8266 IoT Forensics Dashboard (DHT11 + Firebase)")
+/* WiFi Credentials */
+#define WIFI_SSID "your_wifi"
+#define WIFI_PASS "your_pass"
 
+/* Firebase Credentials */
+#define FIREBASE_HOST "iot-forensics-e8c95-default-rtdb.asia-southeast1.firebasedatabase.app"
+#define FIREBASE_AUTH "YOUR_FIREBASE_DATABASE_SECRET"
 
-# ---------------------------------------------------------
-# FIREBASE CONFIG
-# ---------------------------------------------------------
-FIREBASE_URL = (
-    "https://iot-forensics-e8c95-default-rtdb.asia-southeast1.firebasedatabase.app/"
-    "iot-logs.json"
-)
+/* DHT Sensor */
+#define DHTPIN 2
+#define DHTTYPE DHT11
+DHT dht(DHTPIN, DHTTYPE);
 
+/* Firebase */
+FirebaseData fbData;
 
-# ---------------------------------------------------------
-# FUNCTIONS
-# ---------------------------------------------------------
-def convert_ts(ts):
-    """Convert Unix timestamp to Python datetime"""
-    try:
-        return datetime.utcfromtimestamp(int(ts))
-    except Exception:
-        return None
+/* Time Setup */
+WiFiUDP ntpUDP;
+NTPClient timeClient(ntpUDP, "pool.ntp.org", 19800);  // +5:30 (IST)
 
+/* Firebase Path */
+String firebasePath = "/forensics_logs";
 
-def load_data():
-    """Load JSON data from Firebase and convert to DataFrame"""
-    try:
-        data = requests.get(FIREBASE_URL).json()
-    except Exception:
-        return pd.DataFrame()
+void setup() {
+  Serial.begin(115200);
 
-    if not data:
-        return pd.DataFrame()
+  dht.begin();
 
-    rows = []
-    for key, val in data.items():
+  Serial.println("Connecting to WiFi...");
+  WiFi.begin(WIFI_SSID, WIFI_PASS);
 
-        # Skip entries that are not valid objects
-        if not isinstance(val, dict):
-            continue
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
 
-        ts = val.get("timestamp")
-        temp = val.get("temperature")
-        hum = val.get("humidity")
-        anomaly = val.get("anomaly", "unknown")
+  Serial.println("\nWiFi Connected!");
+  Serial.println("IP Address: " + WiFi.localIP().toString());
 
-        if ts is None:
-            continue  # skip entries without timestamp
+  Firebase.begin(FIREBASE_HOST, FIREBASE_AUTH);
 
-        rows.append({
-            "id": key,
-            "timestamp": convert_ts(ts),
-            "temperature": temp,
-            "humidity": hum,
-            "anomaly": anomaly
-        })
+  timeClient.begin();
+  timeClient.update();
+}
 
-    if len(rows) == 0:
-        return pd.DataFrame()
+void loop() {
 
-    df = pd.DataFrame(rows)
+  float temperature = dht.readTemperature();
+  float humidity = dht.readHumidity();
 
-    # Drop rows where timestamp failed to convert
-    df = df.dropna(subset=["timestamp"])
+  if (isnan(temperature) || isnan(humidity)) {
+    Serial.println("Failed to read from DHT sensor!");
+    delay(2000);
+    return;
+  }
 
-    # Sort by time
-    df = df.sort_values("timestamp")
+  timeClient.update();
+  long timestamp = timeClient.getEpochTime();
 
-    return df
+  Serial.println("Sending data to Firebase...");
 
+  FirebaseJson json;
+  json.add("temperature", temperature);
+  json.add("humidity", humidity);
+  json.add("anomaly", "normal");
+  json.add("timestamp", timestamp);
 
-# ---------------------------------------------------------
-# LOAD DATA
-# ---------------------------------------------------------
-df = load_data()
+  if (Firebase.pushJSON(fbData, firebasePath, json)) {
+    Serial.println("Data pushed successfully!");
+    Serial.println(fbData.pushName());
+  } else {
+    Serial.println("Failed to push data");
+    Serial.println(fbData.errorReason());
+  }
 
-if df.empty:
-    st.warning("⚠ No valid log data found in Firebase.")
-    st.info("➡ Wait for ESP8266 to send data.\n➡ Check Firebase path: `/iot-logs`")
-    st.stop()
-
-
-# ---------------------------------------------------------
-# RAW LOG TABLE
-# ---------------------------------------------------------
-st.subheader("📁 Raw Logs")
-st.dataframe(df, height=300)
-
-
-# ---------------------------------------------------------
-# TEMPERATURE CHART
-# ---------------------------------------------------------
-if "temperature" in df.columns:
-    st.subheader("🌡 Temperature Over Time")
-    st.line_chart(df.set_index("timestamp")["temperature"])
-
-
-# ---------------------------------------------------------
-# HUMIDITY CHART
-# ---------------------------------------------------------
-if "humidity" in df.columns:
-    st.subheader("💧 Humidity Over Time")
-    st.line_chart(df.set_index("timestamp")["humidity"])
-
-
-# ---------------------------------------------------------
-# ANOMALY TABLE
-# ---------------------------------------------------------
-anomaly_df = df[df["anomaly"] != "normal"]
-
-st.subheader("🚨 Detected Anomalies")
-if anomaly_df.empty:
-    st.success("No anomalies detected.")
-else:
-    st.dataframe(anomaly_df)
-
-
-# ---------------------------------------------------------
-# DOWNLOAD FORENSIC REPORT
-# ---------------------------------------------------------
-csv = df.to_csv(index=False).encode()
-st.download_button(
-    "⬇ Download Forensic Report (CSV)",
-    csv,
-    "iot_forensics_report.csv",
-    "text/csv",
-)
+  delay(5000);  // Send every 5 seconds
+}

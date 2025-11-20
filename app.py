@@ -3,66 +3,132 @@ import pandas as pd
 import requests
 from datetime import datetime
 
-# ================================
-# CONFIGURE FIREBASE
-# ================================
-FIREBASE_URL = "https://iot-forensics-e8c95-default-rtdb.asia-southeast1.firebasedatabase.app/iot-logs.json"
+# ---------------------------------------------------------
+# STREAMLIT PAGE CONFIG
+# ---------------------------------------------------------
+st.set_page_config(page_title="ESP8266 IoT Forensics", layout="wide")
+st.title("📡 ESP8266 IoT Forensics Dashboard (DHT11 + Firebase)")
 
-# ================================
-# HELPER FUNCTIONS
-# ================================
+
+# ---------------------------------------------------------
+# FIREBASE CONFIG
+# ---------------------------------------------------------
+FIREBASE_URL = (
+    "https://iot-forensics-e8c95-default-rtdb.asia-southeast1.firebasedatabase.app/"
+    "iot-logs.json"
+)
+
+
+# ---------------------------------------------------------
+# FUNCTIONS
+# ---------------------------------------------------------
 def convert_ts(ts):
-    """Convert unix timestamp to readable datetime"""
-    return datetime.utcfromtimestamp(int(ts))
+    """Convert Unix timestamp to Python datetime"""
+    try:
+        return datetime.utcfromtimestamp(int(ts))
+    except Exception:
+        return None
+
 
 def load_data():
-    data = requests.get(FIREBASE_URL).json()
-    if data is None:
+    """Load JSON data from Firebase and convert to DataFrame"""
+    try:
+        data = requests.get(FIREBASE_URL).json()
+    except Exception:
+        return pd.DataFrame()
+
+    if not data:
         return pd.DataFrame()
 
     rows = []
     for key, val in data.items():
+
+        # Skip entries that are not valid objects
+        if not isinstance(val, dict):
+            continue
+
+        ts = val.get("timestamp")
+        temp = val.get("temperature")
+        hum = val.get("humidity")
+        anomaly = val.get("anomaly", "unknown")
+
+        if ts is None:
+            continue  # skip entries without timestamp
+
         rows.append({
             "id": key,
-            "timestamp": convert_ts(val.get("timestamp", 0)),
-            "temperature": val.get("temperature"),
-            "humidity": val.get("humidity"),
-            "anomaly": val.get("anomaly", "unknown")
+            "timestamp": convert_ts(ts),
+            "temperature": temp,
+            "humidity": hum,
+            "anomaly": anomaly
         })
 
+    if len(rows) == 0:
+        return pd.DataFrame()
+
     df = pd.DataFrame(rows)
+
+    # Drop rows where timestamp failed to convert
+    df = df.dropna(subset=["timestamp"])
+
+    # Sort by time
     df = df.sort_values("timestamp")
+
     return df
 
-# ================================
-# STREAMLIT UI
-# ================================
-st.set_page_config(page_title="ESP8266 IoT Forensics", layout="wide")
-st.title("📡 ESP8266 IoT Forensics Dashboard")
-st.write("Realtime DHT11 + Anomaly Monitoring")
 
+# ---------------------------------------------------------
+# LOAD DATA
+# ---------------------------------------------------------
 df = load_data()
 
-# Show Raw Logs
-st.subheader("📁 Raw Logs from Firebase")
+if df.empty:
+    st.warning("⚠ No valid log data found in Firebase.")
+    st.info("➡ Wait for ESP8266 to send data.\n➡ Check Firebase path: `/iot-logs`")
+    st.stop()
+
+
+# ---------------------------------------------------------
+# RAW LOG TABLE
+# ---------------------------------------------------------
+st.subheader("📁 Raw Logs")
 st.dataframe(df, height=300)
 
-# Temperature Chart
-st.subheader("🌡 Temperature Over Time")
-st.line_chart(df.set_index("timestamp")["temperature"])
 
-# Humidity Chart
-st.subheader("💧 Humidity Over Time")
-st.line_chart(df.set_index("timestamp")["humidity"])
+# ---------------------------------------------------------
+# TEMPERATURE CHART
+# ---------------------------------------------------------
+if "temperature" in df.columns:
+    st.subheader("🌡 Temperature Over Time")
+    st.line_chart(df.set_index("timestamp")["temperature"])
 
-# Anomaly Table
+
+# ---------------------------------------------------------
+# HUMIDITY CHART
+# ---------------------------------------------------------
+if "humidity" in df.columns:
+    st.subheader("💧 Humidity Over Time")
+    st.line_chart(df.set_index("timestamp")["humidity"])
+
+
+# ---------------------------------------------------------
+# ANOMALY TABLE
+# ---------------------------------------------------------
+anomaly_df = df[df["anomaly"] != "normal"]
+
 st.subheader("🚨 Detected Anomalies")
-st.dataframe(df[df["anomaly"] != "normal"])
+if anomaly_df.empty:
+    st.success("No anomalies detected.")
+else:
+    st.dataframe(anomaly_df)
 
-# Download button
+
+# ---------------------------------------------------------
+# DOWNLOAD FORENSIC REPORT
+# ---------------------------------------------------------
 csv = df.to_csv(index=False).encode()
 st.download_button(
-    "Download Forensic Report (CSV)",
+    "⬇ Download Forensic Report (CSV)",
     csv,
     "iot_forensics_report.csv",
     "text/csv",

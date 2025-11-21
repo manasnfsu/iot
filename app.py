@@ -12,6 +12,36 @@ from sklearn.decomposition import PCA
 import io
 import base64
 import joblib
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+
+SENDER_EMAIL = "manas.dfis242604@nfsu.ac.in"           # Gmail address used to send alert
+APP_PASSWORD = "euozfdlazplbmtkd"   # Google App Password
+RECEIVER_EMAIL = "manas.dfis242604@nfsu.ac.in"         # Alert receiver email
+
+# --------------------------------------------
+# EMAIL ALERT FUNCTION
+# --------------------------------------------
+def send_email_alert(sender_email, app_password, receiver_email, subject, message):
+    try:
+        msg = MIMEMultipart()
+        msg["From"] = "manas.dfis242604@nfsu.ac.in"
+        msg["To"] = "manas.dfis242604@nfsu.ac.in"
+        msg["Subject"] = "IOT-alert"
+
+        msg.attach(MIMEText(message, "plain"))
+
+        server = smtplib.SMTP("smtp.gmail.com", 587)
+        server.starttls()
+        server.login(sender_email, app_password)
+        server.sendmail(sender_email, receiver_email, msg.as_string())
+        server.quit()
+        return True
+    except Exception as e:
+        st.error(f"❌ Email failed: {e}")
+        return False
+
 
 # -------------------------
 # PAGE CONFIG
@@ -131,10 +161,10 @@ def train_and_score(df_feat: pd.DataFrame, model_type: str = "iforest", contamin
                                 random_state=random_state, n_jobs=-1)
         model.fit(X)
         raw_scores = model.decision_function(X)  # higher = more normal
-        # Convert to anomaly score where higher = more anomalous
         anomaly_score = -raw_scores
         label = model.predict(X)  # 1 normal, -1 outlier
         is_anomaly = (label == -1).astype(int)
+
     elif model_type == "lof":
         model = LocalOutlierFactor(n_neighbors=20, novelty=True, contamination=contamination)
         model.fit(X)
@@ -142,8 +172,6 @@ def train_and_score(df_feat: pd.DataFrame, model_type: str = "iforest", contamin
         anomaly_score = -raw_scores
         preds = model.predict(X)
         is_anomaly = (preds == -1).astype(int)
-    else:
-        raise ValueError("unknown model_type")
 
     df_out = df_feat.copy().reset_index(drop=True)
     df_out["anomaly_score"] = anomaly_score
@@ -173,10 +201,20 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("**Feature engineering**")
     rolling_window = st.slider("Rolling window (samples)", min_value=1, max_value=30, value=5)
+
     st.markdown("---")
     st.markdown("**Model**")
     model_choice = st.selectbox("Select model", options=["iforest", "lof"], index=0)
     contamination = st.slider("Contamination (expected fraction of anomalies)", 0.001, 0.2, 0.02, step=0.001)
+
+    st.markdown("---")
+    st.markdown("**Email Alert Settings** (Gmail + App Password)")
+    sender_email = st.text_input("Sender Gmail address (alerts sent FROM this)", "")
+    app_password = st.text_input("App Password (Google App Password)", type="password")
+    receiver_email = st.text_input("Receiver Email (alerts sent TO this)", "")
+
+    enable_email_alerts = st.checkbox("Enable anomaly email alerts")
+
     st.markdown("---")
     st.markdown("**Misc**")
     retrain_btn = st.button("🔁 Train model")
@@ -185,7 +223,6 @@ with st.sidebar:
 # -------------------------
 # PREPARE DATA
 # -------------------------
-# filter by chosen time window
 mask = (df_raw["ts"] >= start_dt) & (df_raw["ts"] <= end_dt)
 df_window = df_raw.loc[mask].copy()
 if df_window.empty:
@@ -194,25 +231,25 @@ if df_window.empty:
 
 df_feat = feature_engineer(df_window, rolling_window=rolling_window)
 
-# choose features for the model (tunable)
 candidate_features = ["temperature", "humidity", "temp_diff", "hum_diff", "temp_ma", "hum_ma", "temp_z", "hum_z", "hour"]
-selected_features = st.multiselect("Select features to use (recommended defaults checked)", 
+selected_features = st.multiselect("Select features to use", 
                                    options=candidate_features,
                                    default=["temperature", "humidity", "temp_diff", "temp_z", "hum_z"])
 
 st.markdown("---")
-st.write(f"Data loaded: {len(df_raw)} total rows. Using {len(df_feat)} rows in the selected window.")
+st.write(f"Data loaded: {len(df_raw)} total rows. Using {len(df_feat)} rows in window.")
 
 # -------------------------
-# TRAIN / SCORE (trigger)
+# TRAIN / SCORE
 # -------------------------
 train_needed = retrain_btn or ("model_state" not in st.session_state)
 
 if train_needed:
     with st.spinner("Training model..."):
         try:
-            scored_df, trained_model, scaler = train_and_score(df_feat, model_type=model_choice, 
-                                                               contamination=contamination, features=selected_features)
+            scored_df, trained_model, scaler = train_and_score(
+                df_feat, model_type=model_choice, contamination=contamination, features=selected_features
+            )
             st.session_state["model"] = trained_model
             st.session_state["scaler"] = scaler
             st.session_state["scored_df"] = scored_df
@@ -221,17 +258,44 @@ if train_needed:
             st.error(f"Training error: {e}")
             st.stop()
 else:
-    # if not retraining, try to use cached session model
     scored_df = st.session_state.get("scored_df")
-    trained_model = st.session_state.get("model")
-    scaler = st.session_state.get("scaler")
-    if scored_df is None:
-        with st.spinner("Training initial model..."):
-            scored_df, trained_model, scaler = train_and_score(df_feat, model_type=model_choice,
-                                                               contamination=contamination, features=selected_features)
-            st.session_state["model"] = trained_model
-            st.session_state["scaler"] = scaler
-            st.session_state["scored_df"] = scored_df
+
+# -------------------------
+# EMAIL ALERT TRIGGER
+# -------------------------
+latest_anomaly = scored_df[scored_df["is_anomaly"] == 1]
+
+if enable_email_alerts and not latest_anomaly.empty:
+    last_event = latest_anomaly.iloc[0]
+    subject = "🚨 IoT Forensics Alert — Anomaly Detected"
+    message = f"""
+An anomaly was detected by your AI model:
+
+Timestamp: {last_event['ts']}
+Temperature: {last_event['temperature']}
+Humidity: {last_event['humidity']}
+Anomaly Score: {last_event['anomaly_score']}
+
+This may indicate:
+- Sensor tampering
+- Sudden environmental change
+- Device compromise
+- Faulty sensor behavior
+
+Regards,
+IoT Forensics AI System
+    """
+    if "email_sent" not in st.session_state:
+        st.session_state["email_sent"] = False
+
+    if not st.session_state["email_sent"]:
+        if sender_email and receiver_email and app_password:
+            success = send_email_alert(sender_email, app_password, receiver_email, subject, message)
+            if success:
+                st.success("📧 Email alert sent successfully!")
+                st.session_state["email_sent"] = True
+        else:
+            st.warning("Email alerts enabled but missing credentials.")
 
 # -------------------------
 # SHOW METRICS
@@ -247,14 +311,13 @@ with col3:
     st.metric("Median anomaly score", f"{median_score:.4f}")
 
 # -------------------------
-# TIME SERIES PLOT WITH ANOMALIES
+# TIME SERIES PLOT
 # -------------------------
 st.subheader("Time series — anomalies highlighted")
 base = alt.Chart(scored_df).encode(x="ts:T")
-temp_line = base.mark_line().encode(y=alt.Y("temperature:Q", title="Temperature (°C)"))
-hum_line = base.mark_line(color="green").encode(y=alt.Y("humidity:Q", title="Humidity (%)"))
+temp_line = base.mark_line().encode(y="temperature:Q")
+hum_line = base.mark_line(color="green").encode(y="humidity:Q")
 
-# anomaly points (temperature)
 anom_points = alt.Chart(scored_df[scored_df["is_anomaly"]==1]).mark_circle(size=70, color="red").encode(
     x="ts:T",
     y="temperature:Q",
@@ -263,18 +326,18 @@ anom_points = alt.Chart(scored_df[scored_df["is_anomaly"]==1]).mark_circle(size=
 
 st.altair_chart((temp_line + anom_points).interactive().resolve_scale(y='independent'), use_container_width=True)
 
-# humidity with anomalies
 anom_points_h = alt.Chart(scored_df[scored_df["is_anomaly"]==1]).mark_circle(size=70, color="red").encode(
     x="ts:T",
     y="humidity:Q",
     tooltip=["ts:T", "temperature", "humidity", "anomaly_score"]
 )
+
 st.altair_chart((hum_line + anom_points_h).interactive().resolve_scale(y='independent'), use_container_width=True)
 
 # -------------------------
-# PCA projection for 2D visualization
+# PCA projection
 # -------------------------
-st.subheader("PCA projection of features (2D) — anomalies marked")
+st.subheader("PCA projection — anomalies marked")
 X_vis, _ = prepare_features(scored_df, selected_features)
 pca = PCA(n_components=2, random_state=42)
 proj = pca.fit_transform(X_vis)
@@ -291,19 +354,11 @@ scatter = alt.Chart(vis_df).mark_circle(size=60).encode(
 st.altair_chart(scatter, use_container_width=True)
 
 # -------------------------
-# ANOMALY TABLE & EXPLANATIONS
+# ANOMALY TABLE
 # -------------------------
-st.subheader("Anomaly table (sorted by anomaly score desc)")
+st.subheader("Anomaly table")
 sorted_anom = scored_df.sort_values("anomaly_score", ascending=False)
-st.dataframe(sorted_anom[["ts", "temperature", "humidity", "anomaly_score", "is_anomaly"]].head(200), height=300)
-
-st.markdown("**Explanation tips:**")
-st.markdown("""
-- `anomaly_score`: higher = more anomalous (we invert model's decision function so larger means more suspicious).  
-- `is_anomaly`: binary label (1 = anomaly).  
-- Try changing `contamination` — this adjusts sensitivity.  
-- Use rolling window / features to capture short bursts or gradual drifts.
-""")
+st.dataframe(sorted_anom.head(200), height=300)
 
 # -------------------------
 # EXPORTS
@@ -316,9 +371,8 @@ def get_table_download_link(df_to_download: pd.DataFrame, filename="anomaly_repo
 
 st.markdown(get_table_download_link(sorted_anom, filename="anomaly_report.csv"), unsafe_allow_html=True)
 
-# download model (joblib)
 if download_model_btn:
-    if "model" in st.session_state and st.session_state["model"] is not None:
+    if "model" in st.session_state:
         mem_file = io.BytesIO()
         joblib.dump(st.session_state["model"], mem_file)
         mem_file.seek(0)
@@ -326,19 +380,4 @@ if download_model_btn:
         href = f'<a href="data:application/octet-stream;base64,{b64}" download="iforest_model.joblib">⬇ Download model (joblib)</a>'
         st.markdown(href, unsafe_allow_html=True)
     else:
-        st.warning("No model in session. Train a model first.")
-
-# -------------------------
-# OPTIONAL: simple alert rule
-# -------------------------
-st.markdown("---")
-st.subheader("Simple alerting (local)")
-
-threshold = st.slider("Anomaly score threshold for alerting (higher = more sensitive)", 
-                      float(sorted_anom["anomaly_score"].min()), float(sorted_anom["anomaly_score"].max()), 
-                      float(sorted_anom["anomaly_score"].quantile(0.95)))
-recent_alerts = sorted_anom[sorted_anom["anomaly_score"] >= threshold][["ts", "temperature", "humidity", "anomaly_score"]]
-st.write(f"Events above threshold: {len(recent_alerts)}")
-st.dataframe(recent_alerts.head(50))
-
-st.caption("You can wire these events to email/Slack/webhook externally (not included).")
+        st.warning("Train model first.")

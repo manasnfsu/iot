@@ -456,27 +456,24 @@ Please investigate the IoT device immediately.
 
 
 # ============================================================
-# MANUAL ALERT UI — searches/contacts + recipient entry + send
+# MANUAL ALERT UI — simplified contacts (only Me + Add New Email)
 # ============================================================
 st.markdown("---")
 st.subheader("📤 Manual Alert (send to any email)")
 
-# initialize contacts in session state (simple sample list)
+# initialize contacts in session state (only Me by default)
 if "contacts" not in st.session_state:
     st.session_state["contacts"] = [
         {"name": "Me (Manas)", "email": "manas.dfis242604@nfsu.ac.in"},
-        {"name": "Security Team", "email": "security@company.com"},
-        {"name": "Operations", "email": "ops@company.com"},
-        {"name": "OnCall", "email": "oncall@company.com"}
     ]
 
-# contact search
-search_query = st.text_input("Search contacts (type name or email to filter)")
+# contact search (filters only "Me" plus any added emails)
+search_query = st.text_input("Search contacts (type email to filter)")
 
 filtered = []
 if search_query:
     q = search_query.lower()
-    filtered = [c for c in st.session_state["contacts"] if q in c["name"].lower() or q in c["email"].lower()]
+    filtered = [c for c in st.session_state["contacts"] if q in c["email"].lower()]
 else:
     filtered = st.session_state["contacts"]
 
@@ -486,7 +483,7 @@ if filtered:
     cols = st.columns(min(len(filtered), 4))
     for i, c in enumerate(filtered):
         with cols[i % len(cols)]:
-            if st.button(f"Add {c['name']}\n{c['email']}", key=f"add_contact_{i}"):
+            if st.button(f"Add {c['email']}", key=f"add_contact_{i}"):
                 # append to recipient field stored in session_state
                 if "manual_recipients" not in st.session_state:
                     st.session_state["manual_recipients"] = c["email"]
@@ -499,25 +496,25 @@ if filtered:
                         st.session_state["manual_recipients"] = ", ".join(emails)
                 st.success(f"Added {c['email']} to recipients")
 else:
-    st.info("No contacts match. You can add a new contact below.")
+    st.info("No contacts match. You can add a new email below.")
 
-# allow adding a new contact
-with st.expander("➕ Add new contact"):
-    new_name = st.text_input("Contact name", key="new_contact_name")
-    new_email = st.text_input("Contact email", key="new_contact_email")
-    if st.button("Save contact"):
+# allow adding a new email only (no name/company)
+with st.expander("➕ Add new email"):
+    new_email = st.text_input("Email address", key="new_contact_email_only")
+    if st.button("Save email"):
         # basic email validation
         def is_valid_email(email):
             pattern = r"^[\w\.-]+@[\w\.-]+\.\w+$"
             return re.match(pattern, email) is not None
 
-        if not new_name or not new_email:
-            st.error("Name and email are required.")
+        if not new_email:
+            st.error("Email is required.")
         elif not is_valid_email(new_email):
             st.error("Invalid email format.")
         else:
-            st.session_state["contacts"].append({"name": new_name, "email": new_email})
-            st.success("Contact saved. Use the search box to find it.")
+            # store contact with name same as email for simplicity
+            st.session_state["contacts"].append({"name": new_email, "email": new_email})
+            st.success("Email saved. Use the search box or Add button to include it as recipient.")
             # prefill manual_recipients with the new email
             st.session_state["manual_recipients"] = new_email
 

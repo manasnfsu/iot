@@ -1,7 +1,4 @@
-# app_next_level.py
-# Enhanced Streamlit OT-IoT Threat Monitoring Console
-# Built as an upgraded version of the user's provided app.py
-
+# app.py
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -18,88 +15,72 @@ import joblib
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+
+# ========== ADDED IMPORTS ==========
 import matplotlib.pyplot as plt
 from email.mime.image import MIMEImage
 import matplotlib.dates as mdates
-import zipfile
-import os
-import hashlib
+import re
+# ===================================
 
-# -----------------------------
-# CONFIG / SENSITIVE ITEMS
-# -----------------------------
-# NOTE: It's strongly recommended to store credentials in Streamlit secrets or environment variables
-# For convenience we still provide defaults but the sidebar allows you to override them at runtime.
-DEFAULT_SENDER = "manas.dfis242604@nfsu.ac.in"
-DEFAULT_RECEIVER = "manas.dfis242604@nfsu.ac.in"
-DEFAULT_APP_PASSWORD = ""  # leave blank by default — fill via sidebar or secrets
-
-MODEL_PATH = "saved_iforest.joblib"
-SCALER_PATH = "saved_scaler.joblib"
-
-# -----------------------------
-# Email utilities (unchanged behavior preserved)
-# -----------------------------
-SENDER_EMAIL = DEFAULT_SENDER
-APP_PASSWORD = DEFAULT_APP_PASSWORD
-RECEIVER_EMAIL = DEFAULT_RECEIVER
+# ============================================================
+# EMAIL ALERT — HARDCODED CREDENTIALS (leave as-is or edit)
+# ============================================================
+SENDER_EMAIL = "manas.dfis242604@nfsu.ac.in"
+APP_PASSWORD = "euozfdlazplbmtkd"              # Google App Password
+# default receiver (used for auto-alerts if no manual recipient provided)
+RECEIVER_EMAIL = "manas.dfis242604@nfsu.ac.in"
 
 
-def send_email_alert_text(subject, message):
-    """Simple text email using global SENDER_EMAIL / APP_PASSWORD — kept for fallback."""
+# ============================================================
+# EMAIL SENDING FUNCTION (original, preserved)
+# Modified to accept recipient(s)
+# ============================================================
+def send_email_alert_text(subject, message, receiver_emails=None):
+    """
+    Send a plain-text email. receiver_emails may be:
+      - None -> uses global RECEIVER_EMAIL
+      - string -> single email or comma-separated
+      - list -> list of emails
+    Returns True on success, False on failure.
+    """
+    if receiver_emails is None:
+        receiver_emails = [RECEIVER_EMAIL]
+    elif isinstance(receiver_emails, str):
+        receiver_emails = [e.strip() for e in receiver_emails.split(",") if e.strip()]
+    elif isinstance(receiver_emails, list):
+        receiver_emails = [e.strip() for e in receiver_emails if e.strip()]
+    else:
+        receiver_emails = [RECEIVER_EMAIL]
+
     try:
         msg = MIMEMultipart()
         msg["From"] = SENDER_EMAIL
-        msg["To"] = RECEIVER_EMAIL
+        msg["To"] = ", ".join(receiver_emails)
         msg["Subject"] = subject
         msg.attach(MIMEText(message, "plain"))
 
         server = smtplib.SMTP("smtp.gmail.com", 587)
         server.starttls()
         server.login(SENDER_EMAIL, APP_PASSWORD)
-        server.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, msg.as_string())
+        server.sendmail(SENDER_EMAIL, receiver_emails, msg.as_string())
         server.quit()
         return True
+
     except Exception as e:
         st.error(f"❌ Email failed: {e}")
         return False
 
-# Attachments-capable email (kept compatible with previous code)
 
-def send_email_alert_with_graphs(subject, message, attachments):
-    try:
-        msg = MIMEMultipart()
-        msg["From"] = SENDER_EMAIL
-        msg["To"] = RECEIVER_EMAIL
-        msg["Subject"] = subject
-        msg.attach(MIMEText(message, "plain"))
-
-        for fname, data in attachments:
-            try:
-                img = MIMEImage(data)
-                img.add_header('Content-Disposition', 'attachment', filename=fname)
-                msg.attach(img)
-            except Exception as e:
-                print("Failed to attach image", fname, e)
-
-        server = smtplib.SMTP("smtp.gmail.com", 587)
-        server.starttls()
-        server.login(SENDER_EMAIL, APP_PASSWORD)
-        server.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, msg.as_string())
-        server.quit()
-        return True
-    except Exception as e:
-        st.error(f"❌ Email (with graphs) failed: {e}")
-        return False
-
-# -----------------------------
-# Graph creation helper (keeps original functionality)
-# -----------------------------
-
+# ============================================================
+# ADDITIONAL HELPERS — create plots/images and attach to email
+# (unchanged, returns list of (filename, bytes))
+# ============================================================
 def create_graph_images(scored_df, df_feat, features):
     images = []
+
+    # ---------- 1) Temperature & Humidity with anomaly markers ----------
     try:
-        # 1) temp/hum with anomalies
         fig, ax1 = plt.subplots(figsize=(10, 4))
         ax1.plot(scored_df['ts'], scored_df['temperature'], label='Temperature', linewidth=1.5)
         ax1.set_ylabel('Temperature (°C)')
@@ -108,6 +89,7 @@ def create_graph_images(scored_df, df_feat, features):
         ax2.plot(scored_df['ts'], scored_df['humidity'], label='Humidity', linewidth=1.0, linestyle='--')
         ax2.set_ylabel('Humidity (%)')
 
+        # Mark anomalies
         anomalies = scored_df[scored_df['is_anomaly'] == 1]
         if not anomalies.empty:
             ax1.scatter(anomalies['ts'], anomalies['temperature'], marker='o', s=70, facecolors='none', edgecolors='r', label='Anomaly Temp')
@@ -122,7 +104,7 @@ def create_graph_images(scored_df, df_feat, features):
     except Exception as e:
         print("Error creating temp/hum plot:", e)
 
-    # rolling stats & others — same as before
+    # ---------- 2) Rolling means and std ----------
     try:
         win = 5
         rtemp = df_feat.set_index('ts')['temperature'].rolling(win).mean()
@@ -148,6 +130,7 @@ def create_graph_images(scored_df, df_feat, features):
     except Exception as e:
         print("Error creating rolling stats:", e)
 
+    # ---------- 3) Anomaly count by hour ----------
     try:
         if 'hour' not in scored_df.columns:
             scored_df['hour'] = scored_df['ts'].dt.hour
@@ -166,6 +149,7 @@ def create_graph_images(scored_df, df_feat, features):
     except Exception as e:
         print("Error creating anomalies by hour:", e)
 
+    # ---------- 4) Cumulative anomaly curve ----------
     try:
         ordered = scored_df.sort_values('ts')
         ordered['cum_anom'] = ordered['is_anomaly'].cumsum()
@@ -182,17 +166,20 @@ def create_graph_images(scored_df, df_feat, features):
     except Exception as e:
         print("Error creating cumulative anomalies:", e)
 
-    # Simple OT ladder diagram
+    # ---------- 5) Simple Ladder Logic Diagram (OT flavor) ----------
     try:
         fig, ax = plt.subplots(figsize=(6,6))
         ax.set_xlim(0, 10)
         ax.set_ylim(0, 10)
         ax.axis('off')
+        # draw few rungs
         rung_y = [9, 7, 5, 3]
         for y in rung_y:
             ax.hlines(y, 1, 9, linewidth=3, color='black')
+        # left and right vertical rails
         ax.vlines(1, 2, 10, linewidth=4)
         ax.vlines(9, 2, 10, linewidth=4)
+        # put some "contacts" and "coils"
         ax.text(2, 8.6, "I: Sensor OK", fontsize=10)
         ax.text(2, 6.6, "I: Manual Stop", fontsize=10)
         ax.text(5, 4.6, "M: Safety Interlock", fontsize=10)
@@ -208,23 +195,102 @@ def create_graph_images(scored_df, df_feat, features):
 
     return images
 
-# -----------------------------
-# Data fetching and feature engineering (same but robust)
-# -----------------------------
 
+def send_email_alert_with_graphs(subject, message, attachments, receiver_emails=None):
+    """
+    attachments: list of (filename, bytes)
+    receiver_emails: same format as send_email_alert_text
+    """
+    if receiver_emails is None:
+        receiver_emails = [RECEIVER_EMAIL]
+    elif isinstance(receiver_emails, str):
+        receiver_emails = [e.strip() for e in receiver_emails.split(",") if e.strip()]
+    elif isinstance(receiver_emails, list):
+        receiver_emails = [e.strip() for e in receiver_emails if e.strip()]
+    else:
+        receiver_emails = [RECEIVER_EMAIL]
+
+    try:
+        msg = MIMEMultipart()
+        msg["From"] = SENDER_EMAIL
+        msg["To"] = ", ".join(receiver_emails)
+        msg["Subject"] = subject
+        msg.attach(MIMEText(message, "plain"))
+
+        for fname, data in attachments:
+            try:
+                img = MIMEImage(data)
+                img.add_header('Content-Disposition', 'attachment', filename=fname)
+                msg.attach(img)
+            except Exception as e:
+                print("Failed to attach image", fname, e)
+
+        server = smtplib.SMTP("smtp.gmail.com", 587)
+        server.starttls()
+        server.login(SENDER_EMAIL, APP_PASSWORD)
+        server.sendmail(SENDER_EMAIL, receiver_emails, msg.as_string())
+        server.quit()
+        return True
+    except Exception as e:
+        st.error(f"❌ Email (with graphs) failed: {e}")
+        return False
+
+
+# Override send_email_alert to attach graphs automatically.
+# Keep original as send_email_alert_text (above) and now point send_email_alert
+# to the enhanced version so existing calls will include graphs.
+def _enhanced_send_email_alert(subject, message, scored_df_local=None, df_feat_local=None, features_local=None, receiver_emails=None, include_graphs=True):
+    # First send the plain-text email (preserve original behavior / logs)
+    try:
+        send_email_alert_text(subject, message, receiver_emails)
+    except Exception:
+        pass
+
+    # Create attachments if we have data and user requested graphs
+    attachments = []
+    if include_graphs and scored_df_local is not None and df_feat_local is not None:
+        try:
+            attachments = create_graph_images(scored_df_local, df_feat_local, features_local or [])
+        except Exception as e:
+            print("Failed to create attachments:", e)
+
+    # Send full email with attachments (if any)
+    if attachments:
+        return send_email_alert_with_graphs(subject + " (with graphs)", message, attachments, receiver_emails)
+    else:
+        # no attachments to send; plain text already sent — report True
+        return True
+
+# Rebind the name so later calls to send_email_alert() send graphs
+send_email_alert = _enhanced_send_email_alert
+# ============================================================
+
+
+# ============================================================
+# PAGE CONFIG
+# ============================================================
+st.set_page_config(page_title="OT-IoT Threat Monitoring Console", layout="wide")
+st.title("🔎 OT-IoT Threat Monitoring Console")
+st.caption("ESP8266 + Firebase + AI + Streamlit + Email Alerts")
+
+
+# ============================================================
+# FIREBASE URL
+# ============================================================
 FIREBASE_URL = (
     "https://iot-forensics-e8c95-default-rtdb.asia-southeast1.firebasedatabase.app/"
     "forensics_logs.json"
 )
 
-@st.cache_data(ttl=15)
+
+# ============================================================
+# FETCH DATA FROM FIREBASE
+# ============================================================
+@st.cache_data(ttl=10)
 def fetch_raw_data(url):
     try:
-        resp = requests.get(url, timeout=8)
-        resp.raise_for_status()
-        data = resp.json()
-    except Exception as e:
-        print("Fetch error", e)
+        data = requests.get(url).json()
+    except:
         return pd.DataFrame()
 
     if not data:
@@ -234,31 +300,26 @@ def fetch_raw_data(url):
     for key, v in data.items():
         if not isinstance(v, dict):
             continue
+
         ts = v.get("timestamp")
         if ts is None:
             continue
-        try:
-            ts_dt = datetime.utcfromtimestamp(int(ts))
-        except Exception:
-            # accept ISO timestamps too
-            try:
-                ts_dt = pd.to_datetime(ts)
-            except Exception:
-                continue
+
         rows.append({
             "id": key,
-            "ts": ts_dt,
+            "ts": datetime.utcfromtimestamp(int(ts)),
             "temperature": float(v.get("temperature", np.nan)),
             "humidity": float(v.get("humidity", np.nan)),
             "anomaly_tag": v.get("anomaly", "unknown")
         })
+
     df = pd.DataFrame(rows)
-    if df.empty:
-        return df
-    df = df.sort_values("ts").reset_index(drop=True)
-    return df
+    return df.sort_values("ts")
 
 
+# ============================================================
+# FEATURE ENGINEERING
+# ============================================================
 def feature_engineer(df, window=5):
     tmp = df.copy().set_index("ts")
     tmp["temperature"] = tmp["temperature"].interpolate().ffill().bfill()
@@ -276,13 +337,14 @@ def feature_engineer(df, window=5):
     tmp["hum_z"] = (tmp["humidity"] - tmp["hum_ma"]) / tmp["hum_std"].replace(0, 1)
 
     tmp["hour"] = tmp.index.hour
+
     return tmp.reset_index()
 
-# -----------------------------
-# Model train/score with persistence option and explanation helper
-# -----------------------------
 
-def train_and_score(df_feat, model_type="iforest", contamination=0.02, features=None, save_model=False):
+# ============================================================
+# MODEL TRAINING FUNCTION
+# ============================================================
+def train_and_score(df_feat, model_type="iforest", contamination=0.02, features=None):
     X = df_feat[features].fillna(0).values
     scaler = StandardScaler()
     Xs = scaler.fit_transform(X)
@@ -296,280 +358,310 @@ def train_and_score(df_feat, model_type="iforest", contamination=0.02, features=
     scores = -model.decision_function(Xs)
     labels = (model.predict(Xs) == -1).astype(int)
 
-    df_feat = df_feat.copy()
     df_feat["anomaly_score"] = scores
     df_feat["is_anomaly"] = labels
-
-    if save_model and model_type == "iforest":
-        try:
-            joblib.dump(model, MODEL_PATH)
-            joblib.dump(scaler, SCALER_PATH)
-        except Exception as e:
-            st.warning(f"Failed to save model: {e}")
-
     return df_feat, model, scaler
 
 
-def load_saved_model():
-    if os.path.exists(MODEL_PATH) and os.path.exists(SCALER_PATH):
-        try:
-            model = joblib.load(MODEL_PATH)
-            scaler = joblib.load(SCALER_PATH)
-            return model, scaler
-        except Exception as e:
-            st.warning("Could not load saved model: " + str(e))
-    return None, None
+# ============================================================
+# LOAD LIVE DATA
+# ============================================================
+df_raw = fetch_raw_data(FIREBASE_URL)
 
-
-def explain_anomaly(row, df_feat, features, top_n=3):
-    # Use normalized z-style delta features to pick top contributors
-    contributions = {}
-    for f in features:
-        if f in row.index:
-            # fall back to feature Z if available
-            contributions[f] = abs(row.get(f, 0))
-    # sort by absolute value
-    ranked = sorted(contributions.items(), key=lambda x: x[1], reverse=True)
-    return ranked[:top_n]
-
-# -----------------------------
-# Reporting: in-memory zip containing images + summary
-# -----------------------------
-
-def create_report_zip(scored_df, df_feat, features):
-    images = create_graph_images(scored_df, df_feat, features)
-    summary = []
-    summary.append("OT-IoT Forensics Report")
-    summary.append("Generated: " + datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC'))
-    summary.append("")
-
-    total_events = len(scored_df)
-    total_anoms = int(scored_df['is_anomaly'].sum())
-    summary.append(f"Total Events: {total_events}")
-    summary.append(f"Total Anomalies: {total_anoms}")
-    summary.append("")
-
-    latest_anoms = scored_df[scored_df['is_anomaly'] == 1].sort_values('ts')
-    if not latest_anoms.empty:
-        la = latest_anoms.iloc[-1]
-        summary.append("Latest anomaly:")
-        summary.append(f" - ts: {la['ts']}")
-        summary.append(f" - score: {la['anomaly_score']:.4f}")
-        # list feature contributors
-        contribs = explain_anomaly(la, df_feat, features, top_n=5)
-        for k, v in contribs:
-            summary.append(f"   * {k}: {v:.4f}")
-
-    # build zip in memory
-    mem = io.BytesIO()
-    with zipfile.ZipFile(mem, mode='w') as zf:
-        # add images
-        for name, data in images:
-            zf.writestr(name, data)
-        # add summary text
-        zf.writestr('report_summary.txt', '\n'.join(summary))
-        # add csv of anomalies
-        zf.writestr('anomalies.csv', scored_df[scored_df['is_anomaly'] == 1].to_csv(index=False))
-    mem.seek(0)
-    return mem
-
-# -----------------------------
-# Streamlit UI & logic
-# -----------------------------
-
-st.set_page_config(page_title="OT-IoT Threat Monitoring Console — Next Level", layout="wide")
-st.title("🔎 OT-IoT Threat Monitoring Console — Next Level")
-st.caption("Adds model persistence, alert cooldowns, report export, anomaly explanations, and runtime controls.")
-
-# Sidebar controls
-with st.sidebar:
-    st.header("Settings")
-    model_type = st.selectbox("Model", ["iforest", "lof"], index=0)
-    contamination = st.slider("Contamination (expected anomaly fraction)", 0.001, 0.2, 0.02, 0.001)
-    window_hours = st.slider("Window (hours of data to analyze)", 1, 48, 12)
-    save_model = st.checkbox("Save model after training", value=False)
-    load_saved = st.checkbox("Try loading saved model on start", value=False)
-    enable_email = st.checkbox("Enable Email Alerts", value=False)
-    alert_cooldown_minutes = st.number_input("Alert cooldown (minutes)", min_value=0, max_value=1440, value=30)
-
-    st.markdown("---")
-    st.subheader("Email credentials (optional)")
-    SENDER_EMAIL = st.text_input("Sender email", value=DEFAULT_SENDER)
-    RECEIVER_EMAIL = st.text_input("Receiver email", value=DEFAULT_RECEIVER)
-    APP_PASSWORD = st.text_input("App password (or leave blank to use secrets)", type="password")
-    st.caption("Tip: for production store these in Streamlit Secrets or environment variables.")
-
-# fetch data
-FIREBASE_URL_input = FIREBASE_URL
-raw = fetch_raw_data(FIREBASE_URL_input)
-if raw.empty:
-    st.warning("⚠ Waiting for sensor data or Firebase unreachable — check URL and network.")
+if df_raw.empty:
+    st.warning("⚠ Waiting for sensor data...")
     st.stop()
 
-# windowing
-start_dt = raw['ts'].max() - timedelta(hours=window_hours)
-df_window = raw[raw['ts'] >= start_dt]
+# last 12 hours window
+start_dt = df_raw["ts"].max() - timedelta(hours=12)
+df_window = df_raw[df_raw["ts"] >= start_dt]
 
-if df_window.empty:
-    st.warning("No data in the selected window.")
-    st.stop()
-
-# feature engineer
 df_feat = feature_engineer(df_window)
 features = ["temperature", "humidity", "temp_diff", "hum_diff", "temp_z", "hum_z", "hour"]
 
-# model load option
-model = None
-scaler = None
-if load_saved:
-    model, scaler = load_saved_model()
+# ============================================================
+# RETRAIN BUTTON
+# ============================================================
+if st.button("🔁 Retrain Model Live"):
+    st.cache_resource.clear()
+    st.success("Model retrained using latest data!")
 
-# train model
-scored_df, model, scaler = train_and_score(df_feat, model_type=model_type, contamination=contamination, features=features, save_model=save_model)
 
-# persist model objects in session for UI use
-st.session_state.setdefault('model_hash', None)
-if model is not None:
-    # compute a light fingerprint for the model to know if it changed
-    try:
-        mh = hashlib.sha256(str(contamination).encode() + model.__class__.__name__.encode()).hexdigest()
-        st.session_state['model_hash'] = mh
-    except Exception:
-        pass
+# ============================================================
+# TRAIN MODEL
+# ============================================================
+scored_df, model, scaler = train_and_score(df_feat, "iforest", 0.02, features)
 
-# Summary metrics
+
+# ============================================================
+# TOTAL COUNTS — NEW FEATURE
+# ============================================================
+total_events = len(df_raw)
+total_anomalies = scored_df["is_anomaly"].sum()
+
 st.subheader("📊 System Summary")
-col1, col2, col3 = st.columns(3)
-col1.metric("📡 Total Events Received", len(raw))
-col2.metric("🚨 Total Anomalies Detected", int(scored_df['is_anomaly'].sum()))
-col3.metric("Events (window)", len(scored_df))
+m1, m2 = st.columns(2)
 
-# Retrain button
-if st.button("🔁 Retrain Model Now"):
-    scored_df, model, scaler = train_and_score(df_feat, model_type=model_type, contamination=contamination, features=features, save_model=save_model)
-    st.success("Model retrained.")
+m1.metric("📡 Total Events Received", total_events)
+m2.metric("🚨 Total Anomalies Detected", int(total_anomalies))
 
-# Automatic alert logic with cooldown
-latest_anomaly_rows = scored_df[scored_df['is_anomaly'] == 1]
+
+# ============================================================
+# AUTOMATIC EMAIL ALERT (for newest anomaly)
+# ============================================================
+latest_anomaly_rows = scored_df[scored_df["is_anomaly"] == 1]
+
 if not latest_anomaly_rows.empty:
-    latest_anomaly = latest_anomaly_rows.sort_values('ts').iloc[-1]
-    last_anom_id = str(latest_anomaly['ts'])
+    latest_anomaly = latest_anomaly_rows.iloc[-1]
+    last_anom_id = str(latest_anomaly["ts"])
 
-    if 'last_alert_sent_id' not in st.session_state:
-        st.session_state['last_alert_sent_id'] = None
-    if 'last_alert_time' not in st.session_state:
-        st.session_state['last_alert_time'] = datetime.utcfromtimestamp(0)
+    if "last_alert_sent_id" not in st.session_state:
+        st.session_state["last_alert_sent_id"] = None
 
-    # determine cooldown
-    cooldown = timedelta(minutes=int(alert_cooldown_minutes))
-    now = datetime.utcnow()
-    if st.session_state['last_alert_sent_id'] != last_anom_id and (now - st.session_state['last_alert_time']) > cooldown:
-        # prepare message + explanation
-        latest = raw.iloc[-1]
-        subject = "🚨 AI IoT ALERT — Anomaly Detected"
-        message = f"Anomaly at {latest_anomaly['ts']}\nScore: {latest_anomaly['anomaly_score']:.4f}\nTemperature: {latest_anomaly['temperature']}\nHumidity: {latest_anomaly['humidity']}"
+    if st.session_state["last_alert_sent_id"] != last_anom_id:
+        latest = df_raw.iloc[-1]
 
-        # explain top contributors
-        explain = explain_anomaly(latest_anomaly, df_feat, features, top_n=5)
-        explain_text = '\n'.join([f" - {k}: {v:.4f}" for k, v in explain])
-        message += "\nTop contributions:\n" + explain_text
+        subject = "AI IoT ALERT — Anomaly Detected"
 
-        # attachments
-        attachments = create_graph_images(scored_df, df_feat, features)
+        message = f"""
+===============================
+   AI IoT Forensics Alert
+===============================
 
-        if enable_email and APP_PASSWORD:
-            try:
-                send_email_alert_with_graphs(subject, message, attachments)
-                st.success("📧 Automatic alert sent (with graphs).")
-            except Exception as e:
-                st.error("Email send failed: " + str(e))
-        else:
-            st.info("Email disabled or app password missing; alert composed but not sent.\n" + message)
+📌 Anomaly Detected
+Timestamp : {latest_anomaly['ts']}
+Anomaly Score : {latest_anomaly['anomaly_score']:.4f}
 
-        st.session_state['last_alert_sent_id'] = last_anom_id
-        st.session_state['last_alert_time'] = now
+📡 Sensor Values at Anomaly
+Temperature : {latest_anomaly['temperature']} °C
+Humidity    : {latest_anomaly['humidity']} %
 
-# Manual alert + download report
+📡 Current Live Sensor Values
+Live Temperature : {latest['temperature']} °C
+Live Humidity    : {latest['humidity']} %
+
+Please investigate the IoT device immediately.
+"""
+
+        # Send to default RECEIVER_EMAIL (auto-alert)
+        try:
+            send_email_alert(subject, message, scored_df_local=scored_df, df_feat_local=df_feat, features_local=features, receiver_emails=RECEIVER_EMAIL, include_graphs=True)
+            st.session_state["last_alert_sent_id"] = last_anom_id
+            st.success("📧 Automatic alert sent for latest anomaly (with graphs)!")
+        except Exception as e:
+            # fallback: attempt text-only send
+            send_email_alert_text(subject, message, RECEIVER_EMAIL)
+            st.session_state["last_alert_sent_id"] = last_anom_id
+            st.success("📧 Automatic alert sent (text-only fallback).")
+
+
+# ============================================================
+# MANUAL ALERT UI — searches/contacts + recipient entry + send
+# ============================================================
 st.markdown("---")
-if st.button("📤 Send Manual Alert (Preview)"):
-    if not latest_anomaly_rows.empty:
-        la = latest_anomaly_rows.sort_values('ts').iloc[-1]
-        subject = "Manual IoT Alert"
-        msg = f"Manual Trigger\nTime: {la['ts']}\nScore: {la['anomaly_score']:.4f}\nTemp: {la['temperature']}\nHum: {la['humidity']}"
-        attachments = create_graph_images(scored_df, df_feat, features)
-        if enable_email and APP_PASSWORD:
-            send_email_alert_with_graphs(subject, msg, attachments)
-            st.info("Manual alert sent (with graphs).")
+st.subheader("📤 Manual Alert (send to any email)")
+
+# initialize contacts in session state (simple sample list)
+if "contacts" not in st.session_state:
+    st.session_state["contacts"] = [
+        {"name": "Me (Manas)", "email": "manas.dfis242604@nfsu.ac.in"},
+        {"name": "Security Team", "email": "security@company.com"},
+        {"name": "Operations", "email": "ops@company.com"},
+        {"name": "OnCall", "email": "oncall@company.com"}
+    ]
+
+# contact search
+search_query = st.text_input("Search contacts (type name or email to filter)")
+
+filtered = []
+if search_query:
+    q = search_query.lower()
+    filtered = [c for c in st.session_state["contacts"] if q in c["name"].lower() or q in c["email"].lower()]
+else:
+    filtered = st.session_state["contacts"]
+
+st.write("**Contacts** — click a button to add to recipient field")
+# display contacts as buttons (columns)
+if filtered:
+    cols = st.columns(min(len(filtered), 4))
+    for i, c in enumerate(filtered):
+        with cols[i % len(cols)]:
+            if st.button(f"Add {c['name']}\n{c['email']}", key=f"add_contact_{i}"):
+                # append to recipient field stored in session_state
+                if "manual_recipients" not in st.session_state:
+                    st.session_state["manual_recipients"] = c["email"]
+                else:
+                    existing = st.session_state["manual_recipients"]
+                    # avoid duplicates
+                    emails = [e.strip() for e in existing.split(",") if e.strip()]
+                    if c["email"] not in emails:
+                        emails.append(c["email"])
+                        st.session_state["manual_recipients"] = ", ".join(emails)
+                st.success(f"Added {c['email']} to recipients")
+else:
+    st.info("No contacts match. You can add a new contact below.")
+
+# allow adding a new contact
+with st.expander("➕ Add new contact"):
+    new_name = st.text_input("Contact name", key="new_contact_name")
+    new_email = st.text_input("Contact email", key="new_contact_email")
+    if st.button("Save contact"):
+        # basic email validation
+        def is_valid_email(email):
+            pattern = r"^[\w\.-]+@[\w\.-]+\.\w+$"
+            return re.match(pattern, email) is not None
+
+        if not new_name or not new_email:
+            st.error("Name and email are required.")
+        elif not is_valid_email(new_email):
+            st.error("Invalid email format.")
         else:
-            st.info("Manual alert preview (email disabled).\n" + msg)
+            st.session_state["contacts"].append({"name": new_name, "email": new_email})
+            st.success("Contact saved. Use the search box to find it.")
+            # prefill manual_recipients with the new email
+            st.session_state["manual_recipients"] = new_email
+
+# recipient input (allows comma-separated list)
+if "manual_recipients" not in st.session_state:
+    st.session_state["manual_recipients"] = ""
+
+recipient_input = st.text_input("Recipient email(s) (comma-separated). You can add via contact buttons above.", value=st.session_state["manual_recipients"])
+
+include_graphs_manual = st.checkbox("Include graphs/attachments", value=True)
+
+def is_valid_email_list(s):
+    if not s:
+        return False
+    emails = [e.strip() for e in s.split(",") if e.strip()]
+    if not emails:
+        return False
+    pattern = r"^[\w\.-]+@[\w\.-]+\.\w+$"
+    return all(re.match(pattern, e) for e in emails)
+
+# Prepare manual alert message (full detail -- same as automatic)
+if st.button("📤 Send Manual Alert"):
+    if not is_valid_email_list(recipient_input):
+        st.error("Please provide at least one valid recipient email (comma-separated).")
     else:
-        st.warning("No anomalies to send.")
+        # choose the most recent anomaly if exists, else send last sample as info
+        if not latest_anomaly_rows.empty:
+            latest_anomaly = latest_anomaly_rows.iloc[-1]
+            latest = df_raw.iloc[-1]
+            subject = "MANUAL ALERT — AI IoT – Anomaly Detected"
+            message = f"""
+MANUAL ALERT — AI IoT Forensics
 
-# Downloadable report
-st.markdown("### 🗂️ Export")
-if st.button("Generate report (zip)"):
-    zmem = create_report_zip(scored_df, df_feat, features)
-    st.download_button("Download report (ZIP)", data=zmem.getvalue(), file_name=f"iot_report_{datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')}.zip")
+Anomaly Detected
+Timestamp : {latest_anomaly['ts']}
+Anomaly Score : {latest_anomaly['anomaly_score']:.4f}
 
-# Live sensor values
-latest = raw.iloc[-1]
+Sensor Values at Anomaly
+Temperature : {latest_anomaly['temperature']} °C
+Humidity    : {latest_anomaly['humidity']} %
+
+Current Live Sensor Values
+Live Temperature : {latest['temperature']} °C
+Live Humidity    : {latest['humidity']} %
+
+Note: This manual alert was triggered from the Streamlit console.
+"""
+        else:
+            latest = df_raw.iloc[-1]
+            subject = "MANUAL ALERT — AI IoT – Status Update (no anomaly)"
+            message = f"""
+MANUAL ALERT — AI IoT Forensics
+
+No anomalies detected in current window.
+Current Live Sensor Values
+Live Temperature : {latest['temperature']} °C
+Live Humidity    : {latest['humidity']} %
+
+Note: This manual alert was triggered from the Streamlit console.
+"""
+
+        # Attempt to send using enhanced sender (with graphs if requested)
+        try:
+            ok = send_email_alert(subject, message, scored_df_local=scored_df, df_feat_local=df_feat, features_local=features, receiver_emails=recipient_input, include_graphs=include_graphs_manual)
+            if ok:
+                st.success(f"📨 Manual alert sent to: {recipient_input}")
+            else:
+                st.error("Failed to send manual alert. See logs.")
+        except Exception as e:
+            st.error(f"Failed to send manual alert: {e}")
+
+
+# ============================================================
+# LIVE SENSOR VALUES
+# ============================================================
+latest = df_raw.iloc[-1]
+
 st.subheader("📡 Live Sensor Status")
 c1, c2, c3 = st.columns(3)
+
 c1.metric("🌡 Temperature", f"{latest['temperature']:.2f} °C")
 c2.metric("💧 Humidity", f"{latest['humidity']:.2f} %")
-c3.metric("⏱ Last Update", latest['ts'].strftime("%Y-%m-%d %H:%M:%S"))
+c3.metric("⏱ Last Update", latest["ts"].strftime("%Y-%m-%d %H:%M:%S"))
 
 st.markdown("---")
-# Charts (Altair + images)
+
+
+# ============================================================
+# CHARTS — Temperature + Humidity with Anomalies
+# ============================================================
 st.subheader("📈 Temperature (with anomalies)")
 base = alt.Chart(scored_df).encode(x="ts:T")
+
 st.altair_chart(
     base.mark_line().encode(y="temperature:Q") +
-    base.transform_filter("datum.is_anomaly == 1").mark_circle(color="red", size=70).encode(y="temperature:Q"),
+    base.transform_filter("datum.is_anomaly == 1")
+    .mark_circle(color="red", size=70).encode(y="temperature:Q"),
     use_container_width=True
 )
 
 st.subheader("📉 Humidity (with anomalies)")
 st.altair_chart(
     base.mark_line(color="green").encode(y="humidity:Q") +
-    base.transform_filter("datum.is_anomaly == 1").mark_circle(color="red", size=70).encode(y="humidity:Q"),
+    base.transform_filter("datum.is_anomaly == 1")
+    .mark_circle(color="red", size=70).encode(y="humidity:Q"),
     use_container_width=True
 )
 
-# PCA map
-st.subheader("🔵 PCA Anomaly Map")
-try:
-    X_vis = scaler.transform(df_feat[features].fillna(0))
-    p = PCA(n_components=2).fit_transform(X_vis)
-    p_df = pd.DataFrame({"pc1": p[:, 0], "pc2": p[:, 1], "is_anomaly": scored_df["is_anomaly"]})
-    st.altair_chart(
-        alt.Chart(p_df).mark_circle(size=60).encode(
-            x="pc1:Q", y="pc2:Q",
-            color=alt.condition("datum.is_anomaly==1", alt.value("red"), alt.value("blue"))
-        ).interactive(),
-        use_container_width=True
-    )
-except Exception as e:
-    st.warning("Could not compute PCA visualization: " + str(e))
 
-# Anomaly table + explanation
-st.subheader("📜 Anomaly Table & Explanation")
+# ============================================================
+# PCA ANOMALY MAP
+# ============================================================
+st.subheader("🔵 PCA Anomaly Map")
+X_vis = scaler.transform(df_feat[features].fillna(0))
+p = PCA(n_components=2).fit_transform(X_vis)
+p_df = pd.DataFrame({"pc1": p[:, 0], "pc2": p[:, 1], "is_anomaly": scored_df["is_anomaly"]})
+
+st.altair_chart(
+    alt.Chart(p_df).mark_circle(size=60).encode(
+        x="pc1:Q", y="pc2:Q",
+        color=alt.condition("datum.is_anomaly==1", alt.value("red"), alt.value("blue"))
+    ).interactive(),
+    use_container_width=True
+)
+
+
+# ============================================================
+# ANOMALY TABLE
+# ============================================================
+st.subheader("📜 Anomaly Table")
 st.dataframe(scored_df.sort_values("anomaly_score", ascending=False))
 
-if not latest_anomaly_rows.empty:
-    la = latest_anomaly_rows.sort_values('ts').iloc[-1]
-    st.markdown("**Latest Anomaly — Explanation**")
-    top_contribs = explain_anomaly(la, df_feat, features, top_n=5)
-    for f, v in top_contribs:
-        st.write(f"- {f}: {v:.4f}")
-
-# OT visuals (images)
+# ============================================================
+# ========== NEW: Additional OT-style Visuals and Graphs ==========
+# ============================================================
 st.markdown("---")
-st.subheader("🧭 OT Ladder & Additional Diagnostics")
+st.subheader("🧭 OT Ladder & Additional Diagnostics (added)")
+
+# Display the ladder logic image and other images produced for the email in the UI
 try:
     images = create_graph_images(scored_df, df_feat, features)
     cols = st.columns(3)
     for idx, (fname, bdata) in enumerate(images):
+        # convert bytes to displayable PNG via base64
         b64 = base64.b64encode(bdata).decode()
         img_md = f"data:image/png;base64,{b64}"
         with cols[idx % 3]:
@@ -577,13 +669,32 @@ try:
 except Exception as e:
     st.warning("Could not create additional visuals: " + str(e))
 
-# Diagnostics
-st.markdown("### 🔧 Diagnostics")
-col1, col2, col3 = st.columns(3)
-col1.metric("Anomaly Rate (window)", f"{(scored_df['is_anomaly'].mean()*100):.2f}%")
-col2.metric("Latest Anomaly Score", f"{scored_df['anomaly_score'].max():.4f}")
-col3.metric("Events in window", len(scored_df))
+# Extra interactive chart: anomalies over time (Altair)
+try:
+    st.subheader("📊 Anomalies Over Time (Altair)")
+    anomaly_ts = scored_df[scored_df['is_anomaly'] == 1][['ts', 'anomaly_score']]
+    if not anomaly_ts.empty:
+        st.altair_chart(
+            alt.Chart(anomaly_ts).mark_circle(size=80, color="red").encode(
+                x='ts:T', y='anomaly_score:Q', tooltip=['ts', 'anomaly_score']
+            ).interactive(),
+            use_container_width=True
+        )
+    else:
+        st.info("No anomalies in current window to plot (Altair).")
+except Exception as e:
+    st.warning("Could not show Altair anomaly chart: " + str(e))
 
-st.caption("Next-level features: model persistence, alert cooldown, per-anomaly explanation, downloadable zipped report, runtime controls for contamination/window and email creds input.")
+# Extra gauge-like metrics for OT feel
+try:
+    st.subheader("🔧 OT-style Quick Diagnostics")
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Anomaly Rate (window)", f"{(scored_df['is_anomaly'].mean()*100):.2f}%")
+    col2.metric("Latest Anomaly Score", f"{scored_df['anomaly_score'].max():.4f}")
+    col3.metric("Events in window", len(scored_df))
+except Exception as e:
+    st.warning("Could not compute diagnostics: " + str(e))
 
-# EOF
+st.markdown("---")
+st.caption("Added visuals include rolling stats, anomaly histograms by hour, cumulative curve, and a simplified ladder-logic diagram to give an OT flavor. Graphs are attached automatically to alerts when requested.")
+# End of file

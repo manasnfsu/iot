@@ -401,11 +401,11 @@ if not latest_anomaly_rows.empty:
     if st.session_state["last_alert_sent_id"] != last_anom_id:
         latest = df_raw.iloc[-1]
 
-        subject = "🚨 AI IoT ALERT — Anomaly Detected"
+        subject = "AI IoT ALERT — Anomaly Detected"
 
         message = f"""
 ===============================
-🔴 **AI IoT Forensics Alert**
+   **AI IoT Forensics Alert**
 ===============================
 
 📌 **Anomaly Detected**

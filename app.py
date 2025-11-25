@@ -25,12 +25,6 @@ SENDER_EMAIL = "manas.dfis242604@nfsu.ac.in"
 APP_PASSWORD = "euozfdlazplbmtkd"   # Google App Password
 DEFAULT_RECEIVER = "manas.dfis242604@nfsu.ac.in"
 
-QUICK_CONTACTS = [
-    {"name": "Ujjaval", "email": "ujjaval.patel@nfsu.ac.in"},
-    {"name": "Nandini", "email": "nandini.dfis242606@nfsu.ac.in"},
-    {"name": "Jayendra", "email": "jayendrakumar62@gmail.com"},
-]
-
 FIREBASE_URL = (
     "https://iot-forensics-e8c95-default-rtdb.asia-southeast1.firebasedatabase.app/"
     "forensics_logs.json"
@@ -313,7 +307,7 @@ def train_and_score(df_feat, model_type="iforest", contamination=0.02, features=
 # STREAMLIT PAGE
 # ============================================================
 st.set_page_config(page_title="OT-IoT Threat Monitoring Console", layout="wide")
-st.title("🔎 OT-IoT Threat Monitoring Console")
+st.title("OT-IoT Threat Monitoring Console")
 st.caption("ESP8266 + Firebase + AI + Streamlit + Email Alerts")
 
 # Load data
@@ -331,17 +325,17 @@ df_feat = feature_engineer(df_window)
 features = ["temperature", "humidity", "temp_diff", "hum_diff", "temp_z", "hum_z", "hour"]
 
 # retrain button (clears caches to force retrain)
-if st.button("🔁 Retrain Model Live"):
+if st.button("Retrain Model Live"):
     st.cache_resource.clear()
     st.success("Model retrained using latest data!")
 
 scored_df, model, scaler = train_and_score(df_feat, "iforest", contamination=0.02, features=features)
 
 # show summary
-st.subheader("📊 System Summary")
+st.subheader("System Summary")
 m1, m2 = st.columns(2)
-m1.metric("📡 Total Events Received", len(df_raw))
-m2.metric("🚨 Total Anomalies Detected", int(scored_df["is_anomaly"].sum() if not scored_df.empty else 0))
+m1.metric("Total Events Received", len(df_raw))
+m2.metric("Total Anomalies Detected", int(scored_df["is_anomaly"].sum() if not scored_df.empty else 0))
 
 # ============================================================
 # AUTOMATIC ALERT (Option A) - one email per NEW anomaly id
@@ -381,7 +375,7 @@ if not scored_df.empty:
                 "      AI IoT Forensics Alert\n"
                 "===============================\n\n"
                 "A NEW anomaly has been detected.\n\n"
-                f"🔴 Latest Anomaly (id={latest_anom_id})\n"
+                f"Latest Anomaly (id={latest_anom_id})\n"
                 f"Timestamp : {latest_row['ts']}\n"
                 f"Score     : {latest_row['anomaly_score']:.4f}\n"
                 f"Temp      : {latest_row['temperature']} °C\n"
@@ -398,7 +392,7 @@ if not scored_df.empty:
             sent = send_email_with_attachments(subject, message, attachments=attachments, receiver_emails=DEFAULT_RECEIVER)
             if sent:
                 st.session_state["last_alert_sent_id"] = latest_anom_id
-                st.success("📧 New anomaly alert sent (with graphs).")
+                st.success("New anomaly alert sent (with graphs).")
             else:
                 st.error("Automatic alert failed to send.")
 
@@ -406,7 +400,7 @@ if not scored_df.empty:
 # MANUAL ALERT UI - contacts + quick-add + send
 # ============================================================
 st.markdown("---")
-st.subheader("📤 Manual Alert (send to any email)")
+st.subheader("Manual Alert (send to any email)")
 
 # initialize contacts
 if "contacts" not in st.session_state:
@@ -441,20 +435,6 @@ if filtered:
 else:
     st.info("No contacts match. You can add a new email below.")
 
-# quick contact buttons (prominent)
-st.write("**Quick Contacts**")
-qcols = st.columns(len(QUICK_CONTACTS))
-for i, qc in enumerate(QUICK_CONTACTS):
-    with qcols[i]:
-        if st.button(f"Add {qc['name']}", key=f"quick_add_qc_{i}"):
-            if "manual_recipients" not in st.session_state or not st.session_state["manual_recipients"]:
-                st.session_state["manual_recipients"] = qc["email"]
-            else:
-                existing = [e.strip() for e in st.session_state["manual_recipients"].split(",") if e.strip()]
-                if qc["email"] not in existing:
-                    existing.append(qc["email"])
-                    st.session_state["manual_recipients"] = ", ".join(existing)
-            st.success(f"Added {qc['email']}")
 
 # add new email
 with st.expander("➕ Add new email"):
@@ -491,7 +471,7 @@ def is_valid_email_list(s):
     pattern = r"^[\w\.-]+@[\w\.-]+\.\w+$"
     return all(re.match(pattern, e) for e in emails)
 
-if st.button("📤 Send Manual Alert"):
+if st.button("Send Manual Alert"):
     if not is_valid_email_list(recipient_input):
         st.error("Please provide at least one valid recipient email.")
     else:
@@ -530,7 +510,7 @@ if st.button("📤 Send Manual Alert"):
         attachments = create_graph_images(scored_df, df_feat, features) if include_graphs_manual else None
         sent = send_email_with_attachments(subject, message, attachments=attachments, receiver_emails=recipient_input)
         if sent:
-            st.success(f"📨 Manual alert sent to: {recipient_input}")
+            st.success(f"Manual alert sent to: {recipient_input}")
         else:
             st.error("Failed to send manual alert.")
 
@@ -538,16 +518,16 @@ if st.button("📤 Send Manual Alert"):
 # LIVE SENSOR STATUS & CHARTS
 # ============================================================
 latest = df_raw.iloc[-1]
-st.subheader("📡 Live Sensor Status")
+st.subheader("Live Sensor Status")
 c1, c2, c3 = st.columns(3)
-c1.metric("🌡 Temperature", f"{latest['temperature']:.2f} °C")
-c2.metric("💧 Humidity", f"{latest['humidity']:.2f} %")
-c3.metric("⏱ Last Update", latest["ts"].strftime("%Y-%m-%d %H:%M:%S"))
+c1.metric("Temperature", f"{latest['temperature']:.2f} °C")
+c2.metric("Humidity", f"{latest['humidity']:.2f} %")
+c3.metric("Last Update", latest["ts"].strftime("%Y-%m-%d %H:%M:%S"))
 
 st.markdown("---")
 
 # Temperature chart
-st.subheader("📈 Temperature (with anomalies)")
+st.subheader("Temperature (with anomalies)")
 base = alt.Chart(scored_df).encode(x="ts:T")
 st.altair_chart(
     base.mark_line().encode(y="temperature:Q") +
@@ -557,7 +537,7 @@ st.altair_chart(
 )
 
 # Humidity chart
-st.subheader("📉 Humidity (with anomalies)")
+st.subheader("Humidity (with anomalies)")
 st.altair_chart(
     base.mark_line().encode(y="humidity:Q") +
     base.transform_filter("datum.is_anomaly == 1")
@@ -566,7 +546,7 @@ st.altair_chart(
 )
 
 # PCA map (if available)
-st.subheader("🔵 PCA Anomaly Map")
+st.subheader("PCA Anomaly Map")
 try:
     X_vis = scaler.transform(df_feat[features].fillna(0))
     p = PCA(n_components=2).fit_transform(X_vis)
@@ -582,12 +562,12 @@ except Exception:
     st.info("PCA visualization not available for current data.")
 
 # Anomaly table
-st.subheader("📜 Anomaly Table")
+st.subheader("Anomaly Table")
 st.dataframe(scored_df.sort_values("anomaly_score", ascending=False))
 
 # OT visuals (images created earlier)
 st.markdown("---")
-st.subheader("🧭 OT Ladder & Additional Diagnostics (added)")
+st.subheader("OT Ladder & Additional Diagnostics (added)")
 try:
     images = create_graph_images(scored_df, df_feat, features)
     cols = st.columns(3)
@@ -600,7 +580,7 @@ except Exception:
     st.warning("Could not create additional visuals.")
 
 # Quick diagnostics
-st.subheader("🔧 Quick Diagnostics")
+st.subheader("Quick Diagnostics")
 col1, col2, col3 = st.columns(3)
 col1.metric("Anomaly Rate (window)", f"{(scored_df['is_anomaly'].mean()*100):.2f}%")
 col2.metric("Latest Anomaly Score", f"{scored_df['anomaly_score'].max():.4f}")

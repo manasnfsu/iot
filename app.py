@@ -347,6 +347,67 @@ c1.metric("Temperature", f"{latest['temperature']:.2f} °C")
 c2.metric("Humidity", f"{latest['humidity']:.2f} %")
 c3.metric("Last Update", latest["ts"].strftime("%Y-%m-%d %H:%M:%S"))
 
+
+# Temperature chart
+st.subheader("Temperature (with anomalies)")
+base = alt.Chart(scored_df).encode(x="ts:T")
+st.altair_chart(
+    base.mark_line().encode(y="temperature:Q") +
+    base.transform_filter("datum.is_anomaly == 1")
+    .mark_circle(color="red", size=70).encode(y="temperature:Q"),
+    use_container_width=True
+)
+
+# Humidity chart
+st.subheader("Humidity (with anomalies)")
+st.altair_chart(
+    base.mark_line().encode(y="humidity:Q") +
+    base.transform_filter("datum.is_anomaly == 1")
+    .mark_circle(color="red", size=70).encode(y="humidity:Q"),
+    use_container_width=True
+)
+
+# PCA map (if available)
+st.subheader("PCA Anomaly Map")
+try:
+    X_vis = scaler.transform(df_feat[features].fillna(0))
+    p = PCA(n_components=2).fit_transform(X_vis)
+    p_df = pd.DataFrame({"pc1": p[:, 0], "pc2": p[:, 1], "is_anomaly": scored_df["is_anomaly"]})
+    st.altair_chart(
+        alt.Chart(p_df).mark_circle(size=60).encode(
+            x="pc1:Q", y="pc2:Q",
+            color=alt.condition("datum.is_anomaly==1", alt.value("red"), alt.value("blue"))
+        ).interactive(),
+        use_container_width=True
+    )
+except Exception:
+    st.info("PCA visualization not available for current data.")
+
+# Anomaly table
+st.subheader("Anomaly Table")
+st.dataframe(scored_df.sort_values("anomaly_score", ascending=False))
+
+# OT visuals (images created earlier)
+st.markdown("---")
+st.subheader("OT Ladder & Additional Diagnostics (added)")
+try:
+    images = create_graph_images(scored_df, df_feat, features)
+    cols = st.columns(3)
+    for idx, (fname, bdata) in enumerate(images):
+        b64 = base64.b64encode(bdata).decode()
+        img_md = f"data:image/png;base64,{b64}"
+        with cols[idx % 3]:
+            st.image(img_md, caption=fname, use_column_width=True)
+except Exception:
+    st.warning("Could not create additional visuals.")
+
+# Quick diagnostics
+st.subheader("Quick Diagnostics")
+col1, col2, col3 = st.columns(3)
+col1.metric("Anomaly Rate (window)", f"{(scored_df['is_anomaly'].mean()*100):.2f}%")
+col2.metric("Latest Anomaly Score", f"{scored_df['anomaly_score'].max():.4f}")
+col3.metric("Events in window", len(scored_df))
+
 # ============================================================
 # AUTOMATIC ALERT (Option A) - one email per NEW anomaly id
 # ============================================================
@@ -518,66 +579,5 @@ if st.button("Send Manual Alert"):
             st.success(f"Manual alert sent to: {recipient_input}")
         else:
             st.error("Failed to send manual alert.")
-
-# Temperature chart
-st.subheader("Temperature (with anomalies)")
-base = alt.Chart(scored_df).encode(x="ts:T")
-st.altair_chart(
-    base.mark_line().encode(y="temperature:Q") +
-    base.transform_filter("datum.is_anomaly == 1")
-    .mark_circle(color="red", size=70).encode(y="temperature:Q"),
-    use_container_width=True
-)
-
-# Humidity chart
-st.subheader("Humidity (with anomalies)")
-st.altair_chart(
-    base.mark_line().encode(y="humidity:Q") +
-    base.transform_filter("datum.is_anomaly == 1")
-    .mark_circle(color="red", size=70).encode(y="humidity:Q"),
-    use_container_width=True
-)
-
-# PCA map (if available)
-st.subheader("PCA Anomaly Map")
-try:
-    X_vis = scaler.transform(df_feat[features].fillna(0))
-    p = PCA(n_components=2).fit_transform(X_vis)
-    p_df = pd.DataFrame({"pc1": p[:, 0], "pc2": p[:, 1], "is_anomaly": scored_df["is_anomaly"]})
-    st.altair_chart(
-        alt.Chart(p_df).mark_circle(size=60).encode(
-            x="pc1:Q", y="pc2:Q",
-            color=alt.condition("datum.is_anomaly==1", alt.value("red"), alt.value("blue"))
-        ).interactive(),
-        use_container_width=True
-    )
-except Exception:
-    st.info("PCA visualization not available for current data.")
-
-# Anomaly table
-st.subheader("Anomaly Table")
-st.dataframe(scored_df.sort_values("anomaly_score", ascending=False))
-
-# OT visuals (images created earlier)
-st.markdown("---")
-st.subheader("OT Ladder & Additional Diagnostics (added)")
-try:
-    images = create_graph_images(scored_df, df_feat, features)
-    cols = st.columns(3)
-    for idx, (fname, bdata) in enumerate(images):
-        b64 = base64.b64encode(bdata).decode()
-        img_md = f"data:image/png;base64,{b64}"
-        with cols[idx % 3]:
-            st.image(img_md, caption=fname, use_column_width=True)
-except Exception:
-    st.warning("Could not create additional visuals.")
-
-# Quick diagnostics
-st.subheader("Quick Diagnostics")
-col1, col2, col3 = st.columns(3)
-col1.metric("Anomaly Rate (window)", f"{(scored_df['is_anomaly'].mean()*100):.2f}%")
-col2.metric("Latest Anomaly Score", f"{scored_df['anomaly_score'].max():.4f}")
-col3.metric("Events in window", len(scored_df))
-
 st.markdown("---")
 st.caption("Automatic alerts are sent only once per anomaly id and include charts when available.")

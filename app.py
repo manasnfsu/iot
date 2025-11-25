@@ -33,48 +33,59 @@ RECEIVER_EMAIL = "manas.dfis242604@nfsu.ac.in"
 
 
 # ============================================================
-# EMAIL SENDING FUNCTION (original, preserved)
-# Modified to accept recipient(s)
+# EMAIL SENDING FUNCTION (single-email behavior with optional graphs)
 # ============================================================
-def send_email_alert_text(subject, message, receiver_emails=None):
+def _normalize_recipient_input(receiver_emails):
+    if receiver_emails is None:
+        return [RECEIVER_EMAIL]
+    if isinstance(receiver_emails, str):
+        emails = [e.strip() for e in receiver_emails.split(",") if e.strip()]
+        return emails if emails else [RECEIVER_EMAIL]
+    if isinstance(receiver_emails, list):
+        emails = [e.strip() for e in receiver_emails if e.strip()]
+        return emails if emails else [RECEIVER_EMAIL]
+    return [RECEIVER_EMAIL]
+
+
+def send_email_alert(subject, message, attachments=None, receiver_emails=None):
     """
-    Send a plain-text email. receiver_emails may be:
-      - None -> uses global RECEIVER_EMAIL
-      - string -> single email or comma-separated
-      - list -> list of emails
+    Send a single email (plain text body + optional image attachments).
+    attachments: list of (filename, bytes)
+    receiver_emails: None | str (comma separated) | list
     Returns True on success, False on failure.
     """
-    if receiver_emails is None:
-        receiver_emails = [RECEIVER_EMAIL]
-    elif isinstance(receiver_emails, str):
-        receiver_emails = [e.strip() for e in receiver_emails.split(",") if e.strip()]
-    elif isinstance(receiver_emails, list):
-        receiver_emails = [e.strip() for e in receiver_emails if e.strip()]
-    else:
-        receiver_emails = [RECEIVER_EMAIL]
+    receiver_list = _normalize_recipient_input(receiver_emails)
 
     try:
         msg = MIMEMultipart()
         msg["From"] = SENDER_EMAIL
-        msg["To"] = ", ".join(receiver_emails)
+        msg["To"] = ", ".join(receiver_list)
         msg["Subject"] = subject
         msg.attach(MIMEText(message, "plain"))
+
+        # Attach images (if provided)
+        if attachments:
+            for fname, data in attachments:
+                try:
+                    img = MIMEImage(data)
+                    img.add_header('Content-Disposition', 'attachment', filename=fname)
+                    msg.attach(img)
+                except Exception as e:
+                    print(f"Warning: failed to attach {fname}: {e}")
 
         server = smtplib.SMTP("smtp.gmail.com", 587)
         server.starttls()
         server.login(SENDER_EMAIL, APP_PASSWORD)
-        server.sendmail(SENDER_EMAIL, receiver_emails, msg.as_string())
+        server.sendmail(SENDER_EMAIL, receiver_list, msg.as_string())
         server.quit()
         return True
-
     except Exception as e:
         st.error(f"❌ Email failed: {e}")
         return False
 
 
 # ============================================================
-# ADDITIONAL HELPERS — create plots/images and attach to email
-# (unchanged, returns list of (filename, bytes))
+# ADDITIONAL HELPERS — create plots/images and return list of (filename, bytes)
 # ============================================================
 def create_graph_images(scored_df, df_feat, features):
     images = []
@@ -194,76 +205,6 @@ def create_graph_images(scored_df, df_feat, features):
         print("Error creating ladder logic image:", e)
 
     return images
-
-
-def send_email_alert_with_graphs(subject, message, attachments, receiver_emails=None):
-    """
-    attachments: list of (filename, bytes)
-    receiver_emails: same format as send_email_alert_text
-    """
-    if receiver_emails is None:
-        receiver_emails = [RECEIVER_EMAIL]
-    elif isinstance(receiver_emails, str):
-        receiver_emails = [e.strip() for e in receiver_emails.split(",") if e.strip()]
-    elif isinstance(receiver_emails, list):
-        receiver_emails = [e.strip() for e in receiver_emails if e.strip()]
-    else:
-        receiver_emails = [RECEIVER_EMAIL]
-
-    try:
-        msg = MIMEMultipart()
-        msg["From"] = SENDER_EMAIL
-        msg["To"] = ", ".join(receiver_emails)
-        msg["Subject"] = subject
-        msg.attach(MIMEText(message, "plain"))
-
-        for fname, data in attachments:
-            try:
-                img = MIMEImage(data)
-                img.add_header('Content-Disposition', 'attachment', filename=fname)
-                msg.attach(img)
-            except Exception as e:
-                print("Failed to attach image", fname, e)
-
-        server = smtplib.SMTP("smtp.gmail.com", 587)
-        server.starttls()
-        server.login(SENDER_EMAIL, APP_PASSWORD)
-        server.sendmail(SENDER_EMAIL, receiver_emails, msg.as_string())
-        server.quit()
-        return True
-    except Exception as e:
-        st.error(f"❌ Email (with graphs) failed: {e}")
-        return False
-
-
-# Override send_email_alert to attach graphs automatically.
-# Keep original as send_email_alert_text (above) and now point send_email_alert
-# to the enhanced version so existing calls will include graphs.
-def _enhanced_send_email_alert(subject, message, scored_df_local=None, df_feat_local=None, features_local=None, receiver_emails=None, include_graphs=True):
-    # First send the plain-text email (preserve original behavior / logs)
-    try:
-        send_email_alert_text(subject, message, receiver_emails)
-    except Exception:
-        pass
-
-    # Create attachments if we have data and user requested graphs
-    attachments = []
-    if include_graphs and scored_df_local is not None and df_feat_local is not None:
-        try:
-            attachments = create_graph_images(scored_df_local, df_feat_local, features_local or [])
-        except Exception as e:
-            print("Failed to create attachments:", e)
-
-    # Send full email with attachments (if any)
-    if attachments:
-        return send_email_alert_with_graphs(subject + " (with graphs)", message, attachments, receiver_emails)
-    else:
-        # no attachments to send; plain text already sent — report True
-        return True
-
-# Rebind the name so later calls to send_email_alert() send graphs
-send_email_alert = _enhanced_send_email_alert
-# ============================================================
 
 
 # ============================================================
@@ -407,7 +348,7 @@ m2.metric("🚨 Total Anomalies Detected", int(total_anomalies))
 
 
 # ============================================================
-# AUTOMATIC EMAIL ALERT (for newest anomaly)
+# AUTOMATIC EMAIL ALERT (for newest anomaly) — SINGLE EMAIL ONLY
 # ============================================================
 latest_anomaly_rows = scored_df[scored_df["is_anomaly"] == 1]
 
@@ -443,20 +384,26 @@ Live Humidity    : {latest['humidity']} %
 Please investigate the IoT device immediately.
 """
 
-        # Send to default RECEIVER_EMAIL (auto-alert)
+        # create attachments and send single email (graphs attached)
+        attachments = []
         try:
-            send_email_alert(subject, message, scored_df_local=scored_df, df_feat_local=df_feat, features_local=features, receiver_emails=RECEIVER_EMAIL, include_graphs=True)
-            st.session_state["last_alert_sent_id"] = last_anom_id
-            st.success("📧 Automatic alert sent for latest anomaly (with graphs)!")
+            attachments = create_graph_images(scored_df, df_feat, features)
         except Exception as e:
-            # fallback: attempt text-only send
-            send_email_alert_text(subject, message, RECEIVER_EMAIL)
-            st.session_state["last_alert_sent_id"] = last_anom_id
-            st.success("📧 Automatic alert sent (text-only fallback).")
+            print("Failed to create attachments:", e)
+
+        try:
+            ok = send_email_alert(subject, message, attachments=attachments, receiver_emails=RECEIVER_EMAIL)
+            if ok:
+                st.session_state["last_alert_sent_id"] = last_anom_id
+                st.success("📧 Automatic alert sent for latest anomaly (with graphs if available)!")
+            else:
+                st.error("Failed to send automatic alert. See logs.")
+        except Exception as e:
+            st.error(f"Automatic alert failed: {e}")
 
 
 # ============================================================
-# MANUAL ALERT UI — simplified contacts (only Me + Add New Email)
+# MANUAL ALERT UI — simplified contacts (only Me + Add New Email + 3 quick buttons)
 # ============================================================
 st.markdown("---")
 st.subheader("📤 Manual Alert (send to any email)")
@@ -466,6 +413,13 @@ if "contacts" not in st.session_state:
     st.session_state["contacts"] = [
         {"name": "Me (Manas)", "email": "manas.dfis242604@nfsu.ac.in"},
     ]
+
+# Ensure quick-contact buttons (three additional addresses) exist in a separate list
+QUICK_CONTACTS = [
+    {"name": "Nandini", "email": "nandini.dfis242606@nfsu.ac.in"},
+    {"name": "Jayendra", "email": "jayendra.dfis242605@nfsu.ac.in"},
+    {"name": "Ujjaval", "email": "ujjaval.patel@nfsu.ac.in"},
+]
 
 # contact search (filters only "Me" plus any added emails)
 search_query = st.text_input("Search contacts (type email to filter)")
@@ -498,6 +452,25 @@ if filtered:
 else:
     st.info("No contacts match. You can add a new email below.")
 
+# Quick contact buttons (the 3 requested emails) — placed prominently
+st.write("**Quick Contacts** — one-click add")
+qcols = st.columns(len(QUICK_CONTACTS))
+for i, qc in enumerate(QUICK_CONTACTS):
+    with qcols[i]:
+        if st.button(f"Add {qc['name']}", key=f"quick_add_{i}"):
+            if "manual_recipients" not in st.session_state:
+                st.session_state["manual_recipients"] = qc["email"]
+            else:
+                existing = st.session_state["manual_recipients"]
+                emails = [e.strip() for e in existing.split(",") if e.strip()]
+                if qc["email"] not in emails:
+                    emails.append(qc["email"])
+                    st.session_state["manual_recipients"] = ", ".join(emails)
+            # also ensure contact list contains it for future search
+            if not any(c.get("email") == qc["email"] for c in st.session_state["contacts"]):
+                st.session_state["contacts"].append({"name": qc["name"], "email": qc["email"]})
+            st.success(f"Added {qc['email']} to recipients")
+
 # allow adding a new email only (no name/company)
 with st.expander("➕ Add new email"):
     new_email = st.text_input("Email address", key="new_contact_email_only")
@@ -525,6 +498,7 @@ if "manual_recipients" not in st.session_state:
 recipient_input = st.text_input("Recipient email(s) (comma-separated). You can add via contact buttons above.", value=st.session_state["manual_recipients"])
 
 include_graphs_manual = st.checkbox("Include graphs/attachments", value=True)
+
 
 def is_valid_email_list(s):
     if not s:
@@ -576,9 +550,16 @@ Live Humidity    : {latest['humidity']} %
 Note: This manual alert was triggered from the Streamlit console.
 """
 
-        # Attempt to send using enhanced sender (with graphs if requested)
+        # Attempt to send using single-email sender (with graphs if requested)
+        attachments = []
+        if include_graphs_manual:
+            try:
+                attachments = create_graph_images(scored_df, df_feat, features)
+            except Exception as e:
+                print("Failed to create attachments for manual send:", e)
+
         try:
-            ok = send_email_alert(subject, message, scored_df_local=scored_df, df_feat_local=df_feat, features_local=features, receiver_emails=recipient_input, include_graphs=include_graphs_manual)
+            ok = send_email_alert(subject, message, attachments=attachments if include_graphs_manual else None, receiver_emails=recipient_input)
             if ok:
                 st.success(f"📨 Manual alert sent to: {recipient_input}")
             else:

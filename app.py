@@ -211,7 +211,7 @@ def create_graph_images(scored_df, df_feat, features):
 # PAGE CONFIG
 # ============================================================
 st.set_page_config(page_title="OT-IoT Threat Monitoring Console", layout="wide")
-st.title(OT-IoT Threat Monitoring Console")
+st.title("OT-IoT Threat Monitoring Console")
 st.caption("ESP8266 + Firebase + AI + Streamlit + Email Alerts")
 
 

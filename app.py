@@ -355,11 +355,13 @@ latest_anomaly_rows = scored_df[scored_df["is_anomaly"] == 1]
 # Build full anomaly history safely
 all_anomalies_text = ""
 if not latest_anomaly_rows.empty:
-    all_anomalies_text = "Previous Anomalies (History):\n"
+    all_anomalies_text = "Previous Anomalies (History):
+"
     for _, row in latest_anomaly_rows.iterrows():
         line = (
             f" - {row['ts']} | Temp: {row['temperature']}°C | "
-            f"Hum: {row['humidity']}% | Score: {row['anomaly_score']:.4f}\n"
+            f"Hum: {row['humidity']}% | Score: {row['anomaly_score']:.4f}
+"
         )
         all_anomalies_text += line
 

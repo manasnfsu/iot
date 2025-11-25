@@ -348,18 +348,84 @@ m2.metric("🚨 Total Anomalies Detected", int(total_anomalies))
 
 
 # ============================================================
-# AUTOMATIC EMAIL ALERT (clean fixed version)
+# AUTOMATIC EMAIL ALERT (clean fixed version — no unterminated strings)
+# ============================================================
+latest_anomaly_rows = scored_df[scored_df["is_anomaly"] == 1]
+
+# Build full anomaly history safely
+all_anomalies_text = ""
+if not latest_anomaly_rows.empty:
+    all_anomalies_text = "Previous Anomalies (History):\n"
+    for _, row in latest_anomaly_rows.iterrows():
+        line = (
+            f" - {row['ts']} | Temp: {row['temperature']}°C | "
+            f"Hum: {row['humidity']}% | Score: {row['anomaly_score']:.4f}\n"
+        )
+        all_anomalies_text += line
+
+if not latest_anomaly_rows.empty:
+    latest_anomaly = latest_anomaly_rows.iloc[-1]
+    last_anom_id = str(latest_anomaly["ts"])
+
+    if "last_alert_sent_id" not in st.session_state:
+        st.session_state["last_alert_sent_id"] = None
+
+    if st.session_state["last_alert_sent_id"] != last_anom_id:
+        latest = df_raw.iloc[-1]
+
+        subject = "AI IoT ALERT — New Anomaly Detected"
+
+        message = f"""
+===============================
+      AI IoT Forensics Alert
+===============================
+
+A NEW anomaly has been detected.
+
+🔴 Latest Anomaly
+Timestamp : {latest_anomaly['ts']}
+Score     : {latest_anomaly['anomaly_score']:.4f}
+Temp      : {latest_anomaly['temperature']} °C
+Humidity  : {latest_anomaly['humidity']} %
+
+📡 Current Sensor Status
+Temperature : {latest['temperature']} °C
+Humidity    : {latest['humidity']} %
+
+{all_anomalies_text}
+
+This alert is triggered ONLY once per anomaly.
+"""
+
+        attachments = []
+        try:
+            attachments = create_graph_images(scored_df, df_feat, features)
+        except:
+            pass
+
+        try:
+            ok = send_email_alert(subject, message, attachments=attachments, receiver_emails=RECEIVER_EMAIL)
+            if ok:
+                st.session_state["last_alert_sent_id"] = last_anom_id
+                st.success("📧 New anomaly alert sent (with graphs)!")
+            else:
+                st.error("Failed to send alert.")
+        except Exception as e:
+            st.error(f"Alert failed: {e}")
+
 # ============================================================
 latest_anomaly_rows = scored_df[scored_df["is_anomaly"] == 1]
 
 # Build full anomaly history
 all_anomalies_text = ""
 if not latest_anomaly_rows.empty:
-    all_anomalies_text = "Previous Anomalies (History):\n"
+    all_anomalies_text = "Previous Anomalies (History):
+"
     for _, row in latest_anomaly_rows.iterrows():
         all_anomalies_text += (
             f" - {row['ts']} | Temp: {row['temperature']}°C | Hum: {row['humidity']}% | "
-            f"Score: {row['anomaly_score']:.4f}\n"
+            f"Score: {row['anomaly_score']:.4f}
+"
         )
 
 if not latest_anomaly_rows.empty:

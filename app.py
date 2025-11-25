@@ -338,6 +338,18 @@ m1.metric("Total Events Received", len(df_raw))
 m2.metric("Total Anomalies Detected", int(scored_df["is_anomaly"].sum() if not scored_df.empty else 0))
 
 # ============================================================
+# LIVE SENSOR STATUS & CHARTS
+# ============================================================
+latest = df_raw.iloc[-1]
+st.subheader("Live Sensor Status")
+c1, c2, c3 = st.columns(3)
+c1.metric("Temperature", f"{latest['temperature']:.2f} °C")
+c2.metric("Humidity", f"{latest['humidity']:.2f} %")
+c3.metric("Last Update", latest["ts"].strftime("%Y-%m-%d %H:%M:%S"))
+
+st.markdown("---")
+
+# ============================================================
 # AUTOMATIC ALERT (Option A) - one email per NEW anomaly id
 # ============================================================
 if not scored_df.empty:
@@ -508,18 +520,6 @@ if st.button("Send Manual Alert"):
             st.success(f"Manual alert sent to: {recipient_input}")
         else:
             st.error("Failed to send manual alert.")
-
-# ============================================================
-# LIVE SENSOR STATUS & CHARTS
-# ============================================================
-latest = df_raw.iloc[-1]
-st.subheader("Live Sensor Status")
-c1, c2, c3 = st.columns(3)
-c1.metric("Temperature", f"{latest['temperature']:.2f} °C")
-c2.metric("Humidity", f"{latest['humidity']:.2f} %")
-c3.metric("Last Update", latest["ts"].strftime("%Y-%m-%d %H:%M:%S"))
-
-st.markdown("---")
 
 # Temperature chart
 st.subheader("Temperature (with anomalies)")

@@ -406,11 +406,6 @@ st.subheader("Manual Alert (send to any email)")
 if "contacts" not in st.session_state:
     st.session_state["contacts"] = [{"name": "Me", "email": DEFAULT_RECEIVER}]
 
-# add quick contacts to session contacts if missing
-for qc in QUICK_CONTACTS:
-    if not any(c.get("email") == qc["email"] for c in st.session_state["contacts"]):
-        st.session_state["contacts"].append(qc)
-
 # search/filter
 search_query = st.text_input("Search contacts (type email to filter)", key="contact_search")
 if search_query:

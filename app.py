@@ -211,7 +211,7 @@ def create_graph_images(scored_df, df_feat, features):
 # PAGE CONFIG
 # ============================================================
 st.set_page_config(page_title="OT-IoT Threat Monitoring Console", layout="wide")
-st.title("🔎 OT-IoT Threat Monitoring Console")
+st.title(OT-IoT Threat Monitoring Console")
 st.caption("ESP8266 + Firebase + AI + Streamlit + Email Alerts")
 
 
@@ -323,7 +323,7 @@ features = ["temperature", "humidity", "temp_diff", "hum_diff", "temp_z", "hum_z
 # ============================================================
 # RETRAIN BUTTON
 # ============================================================
-if st.button("🔁 Retrain Model Live"):
+if st.button("Retrain Model Live 🔁"):
     st.cache_resource.clear()
     st.success("Model retrained using latest data!")
 
@@ -340,11 +340,11 @@ scored_df, model, scaler = train_and_score(df_feat, "iforest", 0.02, features)
 total_events = len(df_raw)
 total_anomalies = scored_df["is_anomaly"].sum()
 
-st.subheader("📊 System Summary")
+st.subheader("System Summary")
 m1, m2 = st.columns(2)
 
-m1.metric("📡 Total Events Received", total_events)
-m2.metric("🚨 Total Anomalies Detected", int(total_anomalies))
+m1.metric("Total Events Received", total_events)
+m2.metric("Total Anomalies Detected", int(total_anomalies))
 
 
 # ============================================================
@@ -395,7 +395,7 @@ Please investigate the IoT device immediately.
             ok = send_email_alert(subject, message, attachments=attachments, receiver_emails=RECEIVER_EMAIL)
             if ok:
                 st.session_state["last_alert_sent_id"] = last_anom_id
-                st.success("📧 Automatic alert sent for latest anomaly (with graphs if available)!")
+                st.success("Automatic alert sent for latest anomaly ")
             else:
                 st.error("Failed to send automatic alert. See logs.")
         except Exception as e:
@@ -510,7 +510,7 @@ def is_valid_email_list(s):
     return all(re.match(pattern, e) for e in emails)
 
 # Prepare manual alert message (full detail -- same as automatic)
-if st.button("📤 Send Manual Alert"):
+if st.button("Send Manual Alert"):
     if not is_valid_email_list(recipient_input):
         st.error("Please provide at least one valid recipient email (comma-separated).")
     else:
@@ -561,7 +561,7 @@ Note: This manual alert was triggered from the Streamlit console.
         try:
             ok = send_email_alert(subject, message, attachments=attachments if include_graphs_manual else None, receiver_emails=recipient_input)
             if ok:
-                st.success(f"📨 Manual alert sent to: {recipient_input}")
+                st.success(f"Manual alert sent to: {recipient_input}")
             else:
                 st.error("Failed to send manual alert. See logs.")
         except Exception as e:
@@ -573,12 +573,12 @@ Note: This manual alert was triggered from the Streamlit console.
 # ============================================================
 latest = df_raw.iloc[-1]
 
-st.subheader("📡 Live Sensor Status")
+st.subheader("Live Sensor Status")
 c1, c2, c3 = st.columns(3)
 
-c1.metric("🌡 Temperature", f"{latest['temperature']:.2f} °C")
-c2.metric("💧 Humidity", f"{latest['humidity']:.2f} %")
-c3.metric("⏱ Last Update", latest["ts"].strftime("%Y-%m-%d %H:%M:%S"))
+c1.metric("Temperature", f"{latest['temperature']:.2f} °C")
+c2.metric("Humidity", f"{latest['humidity']:.2f} %")
+c3.metric("Last Update", latest["ts"].strftime("%Y-%m-%d %H:%M:%S"))
 
 st.markdown("---")
 
@@ -586,7 +586,7 @@ st.markdown("---")
 # ============================================================
 # CHARTS — Temperature + Humidity with Anomalies
 # ============================================================
-st.subheader("📈 Temperature (with anomalies)")
+st.subheader("Temperature (with anomalies)")
 base = alt.Chart(scored_df).encode(x="ts:T")
 
 st.altair_chart(
@@ -596,7 +596,7 @@ st.altair_chart(
     use_container_width=True
 )
 
-st.subheader("📉 Humidity (with anomalies)")
+st.subheader("Humidity (with anomalies)")
 st.altair_chart(
     base.mark_line(color="green").encode(y="humidity:Q") +
     base.transform_filter("datum.is_anomaly == 1")
@@ -608,7 +608,7 @@ st.altair_chart(
 # ============================================================
 # PCA ANOMALY MAP
 # ============================================================
-st.subheader("🔵 PCA Anomaly Map")
+st.subheader("PCA Anomaly Map")
 X_vis = scaler.transform(df_feat[features].fillna(0))
 p = PCA(n_components=2).fit_transform(X_vis)
 p_df = pd.DataFrame({"pc1": p[:, 0], "pc2": p[:, 1], "is_anomaly": scored_df["is_anomaly"]})
@@ -625,14 +625,14 @@ st.altair_chart(
 # ============================================================
 # ANOMALY TABLE
 # ============================================================
-st.subheader("📜 Anomaly Table")
+st.subheader("Anomaly Table")
 st.dataframe(scored_df.sort_values("anomaly_score", ascending=False))
 
 # ============================================================
 # ========== NEW: Additional OT-style Visuals and Graphs ==========
 # ============================================================
 st.markdown("---")
-st.subheader("🧭 OT Ladder & Additional Diagnostics (added)")
+st.subheader("OT Ladder & Additional Diagnostics (added)")
 
 # Display the ladder logic image and other images produced for the email in the UI
 try:
@@ -649,7 +649,7 @@ except Exception as e:
 
 # Extra interactive chart: anomalies over time (Altair)
 try:
-    st.subheader("📊 Anomalies Over Time (Altair)")
+    st.subheader("Anomalies Over Time (Altair)")
     anomaly_ts = scored_df[scored_df['is_anomaly'] == 1][['ts', 'anomaly_score']]
     if not anomaly_ts.empty:
         st.altair_chart(
@@ -665,7 +665,7 @@ except Exception as e:
 
 # Extra gauge-like metrics for OT feel
 try:
-    st.subheader("🔧 OT-style Quick Diagnostics")
+    st.subheader("OT-style Quick Diagnostics")
     col1, col2, col3 = st.columns(3)
     col1.metric("Anomaly Rate (window)", f"{(scored_df['is_anomaly'].mean()*100):.2f}%")
     col2.metric("Latest Anomaly Score", f"{scored_df['anomaly_score'].max():.4f}")

@@ -347,8 +347,6 @@ c1.metric("Temperature", f"{latest['temperature']:.2f} °C")
 c2.metric("Humidity", f"{latest['humidity']:.2f} %")
 c3.metric("Last Update", latest["ts"].strftime("%Y-%m-%d %H:%M:%S"))
 
-st.markdown("---")
-
 # ============================================================
 # AUTOMATIC ALERT (Option A) - one email per NEW anomaly id
 # ============================================================

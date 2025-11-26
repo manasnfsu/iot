@@ -25,20 +25,20 @@ import re
 st.set_page_config(page_title="OT-IoT Threat Monitoring Console", layout="wide")
 
 # ============================================================
-# 🔥 HACKER THEME + MATRIX ANIMATION (NOW PLACED AT THE TOP)
+# 🔥 HACKER THEME + MATRIX ANIMATION (FIXED)
 # ============================================================
 
 hacker_css = """
 <style>
 
 [data-testid="stAppViewContainer"] {
-    background-image: url("https://i.imgur.com/8bZQ9Bn.gif"); /* Stable hacker wallpaper */
+    background-image: url("https://i.imgur.com/8bZQ9Bn.gif");
     background-size: cover;
     background-attachment: fixed;
     background-position: center;
 }
 
-/* Matrix Rain Background Layer */
+/* Matrix Rain */
 .matrix {
     pointer-events: none;
     position: fixed;
@@ -48,7 +48,7 @@ hacker_css = """
     height: 100%;
     font-size: 14px;
     color: #00ff6a;
-    opacity: 0.10;
+    opacity: 0.12;
     z-index: 1;
 }
 
@@ -64,7 +64,7 @@ hacker_css = """
     animation: drop 3.5s linear infinite;
 }
 
-/* Hacker Title Animation */
+/* Hacker Title */
 .hacker-title {
     font-size: 42px;
     text-align: center;
@@ -83,26 +83,29 @@ hacker_css = """
 """
 st.markdown(hacker_css, unsafe_allow_html=True)
 
-# MATRIX ANIMATION (always on top layer)
+# Matrix characters
 matrix_html = '<div class="matrix">'
 for _ in range(240):
     x = random.randint(0, 100)
     delay = random.uniform(0, 3)
-    matrix_html += f'<span style="left:{x}%; animation-delay:{delay}s;">{random.choice(["0","1"])</span>'
+    char = random.choice(["0", "1"])
+    matrix_html += f'<span style="left:{x}%; animation-delay:{delay}s;">{char}</span>'
 matrix_html += "</div>"
 st.markdown(matrix_html, unsafe_allow_html=True)
 
-# Hacker GIF Header
+# Hacker GIF header
 st.markdown(
     """
     <div class="hacker-title">🟢 Hacker Mode Activated — OT-IoT Threat Console</div>
     <center>
-        <img src="https://media.tenor.com/WS3KqzZo4xEAAAAi/anonymous-hacker.gif" width="260" style="margin-top:10px;">
+        <img src="https://media.tenor.com/WS3KqzZo4xEAAAAi/anonymous-hacker.gif"
+             width="260" style="margin-top:10px;">
     </center>
     <br>
     """,
     unsafe_allow_html=True
 )
+
 
 # ============================================================
 # CONFIG - edit if needed

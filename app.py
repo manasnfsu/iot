@@ -582,16 +582,17 @@ if st.button("Send Manual Alert"):
 st.markdown("---")
 st.caption("Automatic alerts are sent only once per anomaly id and include charts when available.")
 # ============================================================
-# HACKER / CYBER THEME ANIMATIONS (ADD THIS BELOW set_page_config)
+# HACKER / CYBER THEME ANIMATIONS (FIXED VERSION)
 # ============================================================
 
 hacker_css = """
 <style>
 
 [data-testid="stAppViewContainer"] {
-    background-image: url("https://i.ibb.co/0sH1F1h/hacker-bg-dark-green.jpg");
+    background-image: url("https://cdn.wallpapersafari.com/30/21/zgeTuB.gif");
     background-size: cover;
     background-attachment: fixed;
+    background-position: center;
 }
 
 /* Matrix rain animation */
@@ -604,8 +605,8 @@ hacker_css = """
     height: 100%;
     font-size: 14px;
     color: #00ff6a;
-    opacity: 0.12;
-    z-index: 0;
+    opacity: 0.10;
+    z-index: 1;
 }
 
 @keyframes drop {
@@ -617,7 +618,7 @@ hacker_css = """
 
 .matrix span {
     position: absolute;
-    animation: drop 3s linear infinite;
+    animation: drop 3.2s linear infinite;
 }
 
 /* Glowing Hacker Title */
@@ -626,39 +627,40 @@ hacker_css = """
     text-align: center;
     color: #00ff9d;
     font-weight: bold;
-    text-shadow: 0 0 12px #00ff9d, 0 0 24px #00ff9d;
+    text-shadow: 0 0 15px #00ff9d, 0 0 30px #00ff9d;
     animation: glowPulse 2s ease-in-out infinite alternate;
 }
 
 @keyframes glowPulse {
-    from { text-shadow: 0 0 12px #00ff9d; }
-    to   { text-shadow: 0 0 28px #00ffaa; }
+    from { text-shadow: 0 0 10px #00ff9d; }
+    to   { text-shadow: 0 0 26px #00ffaa; }
 }
 
 </style>
 """
-
 st.markdown(hacker_css, unsafe_allow_html=True)
 
-# Matrix characters overlay
+
+# MATRIX ANIMATION
 matrix_html = '<div class="matrix">'
 import random
-rows = 250
+rows = 230
 for _ in range(rows):
     x = random.randint(0, 100)
-    delay = random.uniform(0, 3)
+    delay = random.uniform(0, 2.5)
     matrix_html += f'<span style="left:{x}%; animation-delay:{delay}s;">{random.choice(["0","1"])}</span>'
 matrix_html += "</div>"
-
 st.markdown(matrix_html, unsafe_allow_html=True)
 
-# Hacker animated banner header
+
+# FIXED WORKING HACKER GIF BANNER
 st.markdown(
     """
     <div class="hacker-title">🟢 Hacker Mode Activated — OT-IoT Threat Console</div>
+
     <center>
-        <img src="https://i.gifer.com/origin/48/484bdf1c814bfb2bb5bca048e5fd2919_w200.gif"
-             width="260" style="margin-top:10px; border-radius:8px;">
+        <img src="https://media.tenor.com/2uyENRyi8l0AAAAC/hacker.gif"
+             width="280" style="margin-top:15px; border-radius:12px;">
     </center>
     <br>
     """,

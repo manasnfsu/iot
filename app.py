@@ -19,6 +19,60 @@ import matplotlib.dates as mdates
 import re
 
 # ============================================================
+# 🔥 HACKER TYPEWRITER EFFECT (WORKING - NO IMAGES NEEDED)
+# ============================================================
+
+typewriter_css = """
+<style>
+
+[data-testid="stAppViewContainer"] {
+    background-color: #000000;
+    background-size: cover;
+    background-attachment: fixed;
+}
+
+/* Typewriter Container */
+.typewriter {
+    color: #00ff88;
+    font-family: 'Courier New', monospace;
+    font-size: 32px;
+    width: 100%;
+    overflow: hidden;
+    white-space: nowrap;
+    border-right: 3px solid #00ff88;
+    animation: typing 4s steps(30, end), blink 0.7s infinite;
+    margin: 0 auto;
+    text-align: center;
+    padding-top: 15px;
+}
+
+/* Typing animation */
+@keyframes typing {
+    from { width: 0 }
+    to { width: 100% }
+}
+
+/* Cursor blink */
+@keyframes blink {
+    from { border-color: transparent }
+    to { border-color: #00ff88; }
+}
+
+</style>
+"""
+
+st.markdown(typewriter_css, unsafe_allow_html=True)
+
+st.markdown(
+    """
+    <div class="typewriter">
+        🟢 Hacker Mode Activated — OT-IoT Threat Console
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+
+# ============================================================
 # CONFIG - edit if needed
 # ============================================================
 SENDER_EMAIL = "manas.dfis242604@nfsu.ac.in"

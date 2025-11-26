@@ -524,7 +524,7 @@ if not scored_df.empty:
 # MANUAL ALERT UI - contacts + quick-add + send
 # ============================================================
 st.markdown("---")
-st.subheader("Manual Alert (send to any email)")
+st.subheader("Manual Alert")
 
 # initialize contacts
 if "contacts" not in st.session_state:

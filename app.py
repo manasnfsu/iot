@@ -66,7 +66,7 @@ st.markdown(typewriter_css, unsafe_allow_html=True)
 st.markdown(
     """
     <div class="typewriter">
-        🟢 Hacker Mode Activated — OT-IoT Threat Console
+        OT-IoT Threat Monitoring Console
     </div>
     """,
     unsafe_allow_html=True
@@ -361,7 +361,6 @@ def train_and_score(df_feat, model_type="iforest", contamination=0.02, features=
 # STREAMLIT PAGE
 # ============================================================
 st.set_page_config(page_title="OT-IoT Threat Monitoring Console", layout="wide")
-st.title("OT-IoT Threat Monitoring Console")
 st.caption("ESP8266 + Firebase + AI + Streamlit + Email Alerts")
 
 # Load data

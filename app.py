@@ -442,7 +442,7 @@ st.dataframe(scored_df.sort_values("anomaly_score", ascending=False))
 
 # OT visuals (images created earlier)
 st.markdown("---")
-st.subheader("OT Ladder & Additional Diagnostics (added)")
+st.subheader("OT Ladder & Additional Diagnostics")
 try:
     images = create_graph_images(scored_df, df_feat, features)
     cols = st.columns(3)

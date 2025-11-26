@@ -581,5 +581,88 @@ if st.button("Send Manual Alert"):
             st.error("Failed to send manual alert.")
 st.markdown("---")
 st.caption("Automatic alerts are sent only once per anomaly id and include charts when available.")
+# ============================================================
+# HACKER / CYBER THEME ANIMATIONS (ADD THIS BELOW set_page_config)
+# ============================================================
+
+hacker_css = """
+<style>
+
+[data-testid="stAppViewContainer"] {
+    background-image: url("https://i.ibb.co/0sH1F1h/hacker-bg-dark-green.jpg");
+    background-size: cover;
+    background-attachment: fixed;
+}
+
+/* Matrix rain animation */
+.matrix {
+    pointer-events: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    font-size: 14px;
+    color: #00ff6a;
+    opacity: 0.12;
+    z-index: 0;
+}
+
+@keyframes drop {
+    0%   { transform: translateY(-100%); opacity: 0; }
+    20%  { opacity: 1; }
+    80%  { opacity: 1; }
+    100% { transform: translateY(100%); opacity: 0; }
+}
+
+.matrix span {
+    position: absolute;
+    animation: drop 3s linear infinite;
+}
+
+/* Glowing Hacker Title */
+.hacker-title {
+    font-size: 40px;
+    text-align: center;
+    color: #00ff9d;
+    font-weight: bold;
+    text-shadow: 0 0 12px #00ff9d, 0 0 24px #00ff9d;
+    animation: glowPulse 2s ease-in-out infinite alternate;
+}
+
+@keyframes glowPulse {
+    from { text-shadow: 0 0 12px #00ff9d; }
+    to   { text-shadow: 0 0 28px #00ffaa; }
+}
+
+</style>
+"""
+
+st.markdown(hacker_css, unsafe_allow_html=True)
+
+# Matrix characters overlay
+matrix_html = '<div class="matrix">'
+import random
+rows = 250
+for _ in range(rows):
+    x = random.randint(0, 100)
+    delay = random.uniform(0, 3)
+    matrix_html += f'<span style="left:{x}%; animation-delay:{delay}s;">{random.choice(["0","1"])}</span>'
+matrix_html += "</div>"
+
+st.markdown(matrix_html, unsafe_allow_html=True)
+
+# Hacker animated banner header
+st.markdown(
+    """
+    <div class="hacker-title">🟢 Hacker Mode Activated — OT-IoT Threat Console</div>
+    <center>
+        <img src="https://i.gifer.com/origin/48/484bdf1c814bfb2bb5bca048e5fd2919_w200.gif"
+             width="260" style="margin-top:10px; border-radius:8px;">
+    </center>
+    <br>
+    """,
+    unsafe_allow_html=True
+)
 
 

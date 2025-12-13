@@ -1,0 +1,95 @@
+#include <ESP8266WiFi.h>
+#include <FirebaseESP8266.h>
+#include <DHT.h>
+#include <WiFiUdp.h>
+#include <NTPClient.h>
+
+/* WiFi Credentials */
+#define WIFI_SSID "Manas's Galaxy A23"
+#define WIFI_PASS "bdmz9342"
+
+/* Firebase Credentials */
+#define FIREBASE_HOST "iot-forensics-e8c95-default-rtdb.asia-southeast1.firebasedatabase.app"
+#define FIREBASE_AUTH "AIzaSyDDXM1lUaop_NEz0rWhW43xyUeBwgq2Myk"
+
+/* DHT Sensor */
+#define DHTPIN 4
+#define DHTTYPE DHT11
+DHT dht(DHTPIN, DHTTYPE);
+
+/* LED Pins */
+#define GREEN_LED D0
+#define RED_LED   D1
+
+/* Firebase objects */
+FirebaseConfig config;
+FirebaseAuth auth;
+FirebaseData fbdo;
+
+/* Time */
+WiFiUDP ntpUDP;
+NTPClient timeClient(ntpUDP, "pool.ntp.org", 19800); // IST offset
+
+void setup() {
+  Serial.begin(115200);
+  Serial.println("\nBooting...");
+
+  dht.begin();
+
+  pinMode(GREEN_LED, OUTPUT);
+  pinMode(RED_LED, OUTPUT);
+
+  /* WiFi */
+  WiFi.begin(WIFI_SSID, WIFI_PASS);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(400);
+  }
+
+  /* Firebase */
+  config.database_url = FIREBASE_HOST;
+  config.signer.tokens.legacy_token = FIREBASE_AUTH;
+
+  Firebase.begin(&config, &auth);
+  Firebase.reconnectWiFi(true);
+
+  /* Time */
+  timeClient.begin();
+}
+
+void loop() {
+  timeClient.update();
+  long timestamp = timeClient.getEpochTime();
+
+  float temperature = dht.readTemperature();
+  float humidity = dht.readHumidity();
+
+  if (isnan(temperature) || isnan(humidity)) {
+    delay(3000);
+    return;
+  }
+
+  /* ORIGINAL anomaly logic */
+  String anomaly = "normal";
+  if (temperature > 40) anomaly = "temp_high";
+  if (humidity < 20) anomaly = "humidity_drop";
+
+  /* LED behaviour (unchanged meaning) */
+  if (anomaly == "normal") {
+    digitalWrite(GREEN_LED, HIGH);
+    digitalWrite(RED_LED, LOW);
+  } else {
+    digitalWrite(GREEN_LED, LOW);
+    digitalWrite(RED_LED, HIGH);
+  }
+
+  /* ORIGINAL Firebase JSON STRUCTURE */
+  FirebaseJson json;
+  json.add("timestamp", timestamp);
+  json.add("temperature", temperature);
+  json.add("humidity", humidity);
+  json.add("anomaly", anomaly);
+
+  Firebase.pushJSON(fbdo, "/forensics_logs", json);
+
+  delay(5000);
+}

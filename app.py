@@ -361,7 +361,6 @@ def train_and_score(df_feat, model_type="iforest", contamination=0.02, features=
 # STREAMLIT PAGE
 # ============================================================
 st.set_page_config(page_title="OT-IoT Threat Monitoring Console", layout="wide")
-st.caption("ESP8266 + Firebase + AI + Streamlit + Email Alerts")
 
 # Load data
 df_raw = fetch_raw_data(FIREBASE_URL)
